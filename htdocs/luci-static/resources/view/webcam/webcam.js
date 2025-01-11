@@ -5,37 +5,188 @@
 return view.extend({
 	render: function() {
 		let m, s, o;
-		m = new form.Map('example', _('Example Form'),
+		m = new form.Map('webcam', _(''),
 			_('Example Form Configuration.'));
 
-		s = m.section(form.TypedSection, 'first', _('first section'));
+		s = m.section(form.TypedSection, 'general', _('General Setting'));
 		s.anonymous = true;
 
-		s.option(form.Value, 'first_option', _('First Option'),
+		s.option(form.Value, 'latitude', _('Latitude'),
 			_('Input for the first option'));
 
-		s = m.section(form.TypedSection, 'second', _('second section'));
-		s.anonymous = true;
-
-		o = s.option(form.Flag, 'flag', _('Flag Option'),
+		s.option(form.Value, 'longitude', _('Longitude'),
+			_('Input for the first option'));
+			
+		o = s.option(form.Flag, 'faraday', _('Use Faraday'),
 			_('A boolean option'));
-		o.default = '1';
+		o.default = '0';
 		o.rmempty = false;
 
-		o = s.option(form.ListValue, 'select', _('Select Option'),
+		s = m.section(form.TypedSection, 'shutter', _('Generl Shutter Setting'));
+		s.anonymous = true;
+		
+		o = s.option(form.ListValue, 'imageformat', _('Image Format'),
 			_('A select option'));
 		o.placeholder = 'placeholder';
-		o.value('key1', 'value1');
-		o.value('key2', 'value2');
+		o.value('0', 'value1');
+		o.value('1', 'value2');
+		o.value('2', 'value2');
+		o.value('3', 'value2');
+		o.value('4', 'value2');
 		o.rmempty = false;
 		o.editable = true;
+		
+		o = s.option(form.ListValue, 'imagesize', _('Image Size'),
+			_('A select option'));
+		o.placeholder = 'placeholder';
+		o.value('0', 'Large');
+		o.value('1', 'Medium 1');
+		o.value('2', 'Medium 2');
+		o.value('3', 'Medium 3');
+		o.value('4', 'Small');
+		o.rmempty = false;
+		o.editable = true;		
 
-		s = m.section(form.TypedSection, 'third', _('third section'));
-		s.anonymous = true;
-		o = s.option(form.Value, 'password_option', _('Password Option'),
+		o = s.option(form.ListValue, 'imagequality', _('Image Quality'),
+			_('A select option'));
+		o.placeholder = 'placeholder';
+		o.value('0', 'Superfine');
+		o.value('1', 'Fine');
+		o.value('2', 'Normal 2');
+		o.rmempty = false;
+		o.editable = true;				
+		
+		o = s.option(form.ListValue, 'whitebalance', _('Whitebalance'),
+			_('A select option'));
+		o.placeholder = 'placeholder';
+		o.value('0', 'Auto');
+		o.value('1', 'Daylight');
+		o.value('2', 'Cloudy');
+		o.value('3', 'Tungsten');
+		o.value('4', 'Fluorescent');
+		o.value('5', 'Fluorescent H');
+		o.value('6', 'Unknown value 0005');
+		o.value('7', 'Custom');
+		o.rmempty = false;
+		o.editable = true;				
+		
+		s = m.section(form.TypedSection, 'day', _('Day Shutter Setting'));
+		s.anonymous = true;		
+		
+		o = s.option(form.ListValue, 'iso_day', _('ISO Day Setting'),
+			_('A select option'));
+		o.placeholder = 'placeholder';
+		o.value('0', 'Auto');
+		o.value('1', 'ISO 100');
+		o.value('2', 'ISO 200');
+		o.value('3', 'ISO 400');
+		o.value('4', 'ISO 800');
+		o.rmempty = false;
+		o.editable = true;		
+		
+		o = s.option(form.ListValue, 'aperture_day', _('Aperture Day Setting'),
+			_('A select option'));
+		o.placeholder = 'placeholder';
+		o.value('0', 'Implicit Auto');
+		o.value('1', 'Auto');
+		o.value('14', '2.8');
+		o.value('3', 'ISO 400');
+		o.value('4', 'ISO 800');
+		o.value('5', 'ISO 800');
+		o.value('6', 'ISO 800');
+		o.value('7', 'ISO 800');
+		o.value('8', 'ISO 800');
+		o.value('9', 'ISO 800');
+		o.value('10', 'ISO 800');
+		o.value('11', 'ISO 800');
+		o.rmempty = false;
+		o.editable = true;		
+
+		o = s.option(form.ListValue, 'shutterspeed_day', _('Shutterspeed Day Setting'),
+			_('A select option'));
+		o.placeholder = 'placeholder';
+		o.value('0', 'Auto');
+		o.value('1', 'Auto');
+		o.value('14', '2.8');
+		o.value('3', 'ISO 400');
+		o.value('4', 'ISO 800');
+		o.value('5', 'ISO 800');
+		o.value('6', 'ISO 800');
+		o.value('7', 'ISO 800');
+		o.value('8', 'ISO 800');
+		o.value('9', 'ISO 800');
+		o.value('10', 'ISO 800');
+		o.value('11', 'ISO 800');
+		o.rmempty = false;
+		o.editable = true;		
+
+
+		s = m.section(form.TypedSection, 'night', _('Night Shutter Setting'));
+		s.anonymous = true;		
+		
+		o = s.option(form.ListValue, 'iso_night', _('ISO Night Setting'),
+			_('A select option'));
+		o.placeholder = 'placeholder';
+		o.value('0', 'Auto');
+		o.value('1', 'ISO 100');
+		o.value('2', 'ISO 200');
+		o.value('3', 'ISO 400');
+		o.value('4', 'ISO 800');
+		o.rmempty = false;
+		o.editable = true;		
+		
+		o = s.option(form.ListValue, 'aperture_night', _('Aperture Night Setting'),
+			_('A select option'));
+		o.placeholder = 'placeholder';
+		o.value('0', 'Implicit Auto');
+		o.value('1', 'Auto');
+		o.value('14', '2.8');
+		o.value('3', 'ISO 400');
+		o.value('4', 'ISO 800');
+		o.value('5', 'ISO 800');
+		o.value('6', 'ISO 800');
+		o.value('7', 'ISO 800');
+		o.value('8', 'ISO 800');
+		o.value('9', 'ISO 800');
+		o.value('10', 'ISO 800');
+		o.value('11', 'ISO 800');
+		o.rmempty = false;
+		o.editable = true;		
+
+		o = s.option(form.ListValue, 'shutterspeed_night', _('Shutterspeed NightSetting'),
+			_('A select option'));
+		o.placeholder = 'placeholder';
+		o.value('0', 'Auto');
+		o.value('1', 'Auto');
+		o.value('14', '2.8');
+		o.value('3', 'ISO 400');
+		o.value('4', 'ISO 800');
+		o.value('5', 'ISO 800');
+		o.value('6', 'ISO 800');
+		o.value('7', 'ISO 800');
+		o.value('8', 'ISO 800');
+		o.value('9', 'ISO 800');
+		o.value('10', 'ISO 800');
+		o.value('11', 'ISO 800');
+		o.rmempty = false;
+		o.editable = true;		
+
+		s = m.section(form.TypedSection, 'server', _('Upload Server'));
+		s.anonymous = true;	
+
+		s.option(form.Value, 'upload_server', _('Server'),
+			_('Input for the first option'));
+								
+
+		s.option(form.Value, 'upload_directory', _('Directory'),
+			_('Input for the first option'));
+
+		s.option(form.Value, 'upload_username', _('Username'),
+			_('Input for the first option'));
+
+		o = s.option(form.Value, 'upload_password', _('Password'),
 			_('Input for a password (storage on disk is not encrypted)'));
 		o.password = true;
-		o = s.option(form.DynamicList, 'list_option', _('Dynamic list option'));
 
 		return m.render();
 	},
