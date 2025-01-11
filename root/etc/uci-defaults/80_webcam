@@ -7,3 +7,23 @@ uci set example.third=third
 uci commit
 
 return 0
+
+
+touch /etc/config/webcam
+uci set webcam.latitude=first
+uci set webcam.longitude=second
+uci set webcam.imageformat=third
+uci set webcam.imagesize=third
+uci set webcam.imagequality=third
+uci set webcam.iso=third
+uci set webcam.aperture=third
+uci set webcam.shutterspeed=third
+uci set webcam.whitebalance=third
+uci set webcam.degrees_cf=third
+uci set webcam.upload_server=third
+uci set webcam.upload_username=third
+uci set webcam.upload_password=third
+uci set webcam.upload_directory=third
+uci commit
+
+return 0
