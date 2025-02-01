@@ -1,6 +1,6 @@
 #!/bin/sh
 
-touch /etc/config/setting
+touch /etc/config/webcam
 uci set webcam.general=general
 uci set webcam.shutter=shutter
 uci commit
