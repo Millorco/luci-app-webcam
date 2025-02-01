@@ -1,10 +1,22 @@
 {
-  "admin/services/webcam": {
-    "title": "Webcam",
-    "order": 100,
+  "admin/webcam/": {
+    "title": "webcam",
+    "order": 60,
     "action": {
-      "type": "view",
-      "path": "webcam/webcam"
+      "type": "firstchild"
+    },
+    "depends": {
+      "acl": [ "luci-app-webcam" ]
     }
   },
+
+  "admin/webcam/setting": {
+    "title": "Setting",
+    "order": 1,
+    "action": {
+      "type": "view",
+      "path": "webcam/setting"
+    }
+  },
+  
 }
