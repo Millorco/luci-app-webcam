@@ -1,10 +1,8 @@
 #!/bin/sh
 
 touch /etc/config/webcam
+uci set webcam.general=general
 uci set webcam.shutter=shutter
-uci set webcam.day=day
-uci set webcam.night=night
-uci set webcam.server=server
 uci commit
 
 return 0
