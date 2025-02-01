@@ -8,7 +8,7 @@ return view.extend({
 		m = new form.Map('webcam', _(''),
 			_('Example Form Configuration.'));
 
-		s = m.section(form.TypedSection, 'general', _('General Setting'));
+		s = m.section(form.TypedSection, 'general', _('General'));
 		s.anonymous = true;
 
 		s.option(form.Value, 'latitude', _('Latitude'),
@@ -22,7 +22,7 @@ return view.extend({
 		o.default = '0';
 		o.rmempty = false;
 
-		s = m.section(form.TypedSection, 'shutter', _('Generl Shutter Setting'));
+		s = m.section(form.TypedSection, 'shutter', _('Generl Shutter'));
 		s.anonymous = true;
 		
 		o = s.option(form.ListValue, 'imageformat', _('Image Format'),
@@ -70,10 +70,10 @@ return view.extend({
 		o.rmempty = false;
 		o.editable = true;				
 		
-		s = m.section(form.TypedSection, 'day', _('Day Shutter Setting'));
+		s = m.section(form.TypedSection, 'day', _('Day Shutter'));
 		s.anonymous = true;		
 		
-		o = s.option(form.ListValue, 'iso_day', _('ISO Day Setting'),
+		o = s.option(form.ListValue, 'iso_day', _('ISO'),
 			_('A select option'));
 		o.placeholder = 'placeholder';
 		o.value('0', 'Auto');
@@ -84,7 +84,7 @@ return view.extend({
 		o.rmempty = false;
 		o.editable = true;		
 		
-		o = s.option(form.ListValue, 'aperture_day', _('Aperture Day Setting'),
+		o = s.option(form.ListValue, 'aperture_day', _('Aperture'),
 			_('A select option'));
 		o.placeholder = 'placeholder';
 		o.value('0', 'Implicit Auto');
@@ -102,7 +102,7 @@ return view.extend({
 		o.rmempty = false;
 		o.editable = true;		
 
-		o = s.option(form.ListValue, 'shutterspeed_day', _('Shutterspeed Day Setting'),
+		o = s.option(form.ListValue, 'shutterspeed_day', _('Shutterspeed'),
 			_('A select option'));
 		o.placeholder = 'placeholder';
 		o.value('0', 'Auto');
@@ -121,10 +121,10 @@ return view.extend({
 		o.editable = true;		
 
 
-		s = m.section(form.TypedSection, 'night', _('Night Shutter Setting'));
+		s = m.section(form.TypedSection, 'night', _('Night Shutter'));
 		s.anonymous = true;		
 		
-		o = s.option(form.ListValue, 'iso_night', _('ISO Night Setting'),
+		o = s.option(form.ListValue, 'iso_night', _('ISO'),
 			_('A select option'));
 		o.placeholder = 'placeholder';
 		o.value('0', 'Auto');
@@ -135,7 +135,7 @@ return view.extend({
 		o.rmempty = false;
 		o.editable = true;		
 		
-		o = s.option(form.ListValue, 'aperture_night', _('Aperture Night Setting'),
+		o = s.option(form.ListValue, 'aperture_night', _('Aperture'),
 			_('A select option'));
 		o.placeholder = 'placeholder';
 		o.value('0', 'Implicit Auto');
@@ -153,7 +153,7 @@ return view.extend({
 		o.rmempty = false;
 		o.editable = true;		
 
-		o = s.option(form.ListValue, 'shutterspeed_night', _('Shutterspeed NightSetting'),
+		o = s.option(form.ListValue, 'shutterspeed_night', _('Shutterspeed Night'),
 			_('A select option'));
 		o.placeholder = 'placeholder';
 		o.value('0', 'Auto');
