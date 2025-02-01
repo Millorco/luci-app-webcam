@@ -1,6 +1,6 @@
 {
   "admin/webcam/": {
-    "title": "webcam",
+    "title": "Webcam",
     "order": 100,
     "action": {
       "type": "firstchild"
