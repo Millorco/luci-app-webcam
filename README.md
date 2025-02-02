@@ -6,6 +6,8 @@ agiungere se presente ventola
 
 Whatchdog?
 
+Eventuale stazone meteo
+
 
 # Example app for js based Luci
 
