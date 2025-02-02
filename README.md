@@ -1,6 +1,9 @@
 Aggiungere sensore temperatura porta 
+
 Aggiungere se presente riscaldament
+
 agiungere se presente ventola
+
 Whatchdog?
 
 
