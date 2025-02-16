@@ -1,9 +1,6 @@
 'use strict';
-'require form';
-'require fs';
-'require uci';
-'require ui';
 'require view';
+'require form';
 
 return view.extend({
 	render: function() {
@@ -26,7 +23,5 @@ return view.extend({
 		o.rmempty = false;
 
 		return m.render();
-	}
+	},
 });
-
-
