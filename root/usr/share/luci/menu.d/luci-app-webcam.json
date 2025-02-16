@@ -8,8 +8,8 @@
 		},
 		"depends": {
 			"acl": [ "luci-app-webcam" ]
-		},
-	}
+		}
+	},
 	"admin/services/webcam/setting": {
 		"title": "Setting",
 		"order": 10,
