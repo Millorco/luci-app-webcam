@@ -8,7 +8,7 @@
 return view.extend({
 	render: function() {
 		let m, s, o;
-		m = new form.Map('setting', _(''),
+		m = new form.Map('webcam', _(''),
 			_('Example Form Configuration.'));
 
 		s = m.section(form.TypedSection, 'general', _('General'));
