@@ -26,7 +26,7 @@ return view.extend({
 		o.rmempty = false;
 
 		return m.render();
-	},
+	}
 });
 
 
