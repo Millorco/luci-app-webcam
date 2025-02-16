@@ -1,7 +1,7 @@
 {
 	"admin/services/webcam": {
 		"title": "Webcam",
-		"order": 60,
+		"order": 50,
 		"action": {
 			"type": "alias",
 			"path": "admin/services/webcam/setting"
