@@ -5,10 +5,9 @@
 return view.extend({
 	render: function() {
 		let m, s, o;
-		m = new form.Map('webcam', _(''),
-			_('Example Form Configuration.'));
+		m = new form.Map('webcam', _(''));
 
-		s = m.section(form.TypedSection, 'shooting', _('Generl shooting'));
+		s = m.section(form.TypedSection, 'shooting', _('Common Shooting Settings'));
 		s.anonymous = true;
 		
 		o = s.option(form.ListValue, 'imageformat', _('Image Format'),
