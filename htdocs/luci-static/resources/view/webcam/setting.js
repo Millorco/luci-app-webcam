@@ -22,7 +22,6 @@ return view.extend({
 		o.default = '0';
 		o.rmempty = false;
 
-
 		return m.render();
 	},
 });
