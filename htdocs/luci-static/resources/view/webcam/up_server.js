@@ -5,10 +5,9 @@
 return view.extend({
 	render: function() {
 		let m, s, o;
-		m = new form.Map('webcam', _(''),
-			_('Example Form Configuration.'));
+		m = new form.Map('webcam', _(''));
 
-		s = m.section(form.TypedSection, 'server', _('Upload Server'));
+		s = m.section(form.TypedSection, 'server', _('Upload Server Setting'));
 		s.anonymous = true;	
 
 		s.option(form.Value, 'upload_server', _('Server'),
