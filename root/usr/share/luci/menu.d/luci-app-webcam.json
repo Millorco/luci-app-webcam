@@ -1,6 +1,6 @@
 {
 	"admin/services/webcam": {
-		"title": "SSH Tunnels",
+		"title": "Webcam",
 		"order": 50,
 		"action": {
 			"type": "alias",
@@ -11,7 +11,7 @@
 		}
 	},
 	"admin/services/webcam/ssh_keys": {
-		"title": "SSH Keys",
+		"title": "Setting",
 		"order": 10,
 		"action": {
 			"type": "view",
@@ -19,7 +19,7 @@
 		}
 	},
 	"admin/services/webcam/ssh_servers": {
-		"title": "Servers",
+		"title": "Shooting",
 		"order": 20,
 		"action": {
 			"type": "view",
@@ -27,7 +27,7 @@
 		}
 	},
 	"admin/services/webcam/ssh_tunnels": {
-		"title": "SSH Tunnels",
+		"title": "Day Setting",
 		"order": 30,
 		"action": {
 			"type": "view",
@@ -35,7 +35,7 @@
 		}
 	},
 	"admin/services/webcam/ssh_hosts": {
-		"title": "Known Hosts",
+		"title": "Night Setting",
 		"order": 40,
 		"action": {
 			"type": "view",
