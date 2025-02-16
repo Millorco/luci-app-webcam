@@ -12,8 +12,7 @@ return view.extend({
 		s.anonymous = true;	
 
 		s.option(form.Value, 'upload_server', _('Server'),
-			_('Input for the first option'));
-								
+			_('Input for the first option'));					
 
 		s.option(form.Value, 'upload_directory', _('Directory'),
 			_('Input for the first option'));
