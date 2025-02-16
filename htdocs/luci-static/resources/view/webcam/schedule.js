@@ -7,13 +7,13 @@ var isReadonlyView = !L.hasViewPermission() || null;
 
 return view.extend({
 	load: function() {
-		return L.resolveDefault(fs.read('/etc/crontabs/webcam'), '');
+		return L.resolveDefault(fs.read('/etc/crontabs/root'), '');
 	},
 
 	handleSave: function(ev) {
 		var value = (document.querySelector('textarea').value || '').trim().replace(/\r\n/g, '\n') + '\n';
 
-		return fs.write('/etc/crontabs/webcam', value).then(function(rc) {
+		return fs.write('/etc/crontabs/root', value).then(function(rc) {
 			document.querySelector('textarea').value = value;
 			ui.addNotification(null, E('p', _('Contents have been saved.')), 'info');
 
@@ -27,7 +27,7 @@ return view.extend({
 		return E([
 			E('h2', _('Schedule Shooting')),
 			E('p', { 'class': 'cbi-section-descr' }, _('This is the system crontab in which scheduled tasks can be defined.')),
-			E('p', {}, E('textarea', { 'style': 'width:100%', 'rows': 2, 'disabled': isReadonlyView }, [ crontab != null ? crontab : '' ]))
+			E('p', {}, E('textarea', { 'style': 'width:100%', 'rows': 5, 'disabled': isReadonlyView }, [ crontab != null ? crontab : '' ]))
 		]);
 	},
 
