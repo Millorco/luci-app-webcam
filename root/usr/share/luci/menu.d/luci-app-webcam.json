@@ -9,37 +9,5 @@
 		"depends": {
 			"acl": [ "luci-app-webcam" ]
 		}
-	},
-	"admin/services/webcam/shooting ": {
-		"title": "Shooting ",
-		"order": 10,
-		"action": {
-			"type": "view",
-			"path": "webcam/shooting "
-		}
-	},
-	"admin/services/webcam/day_setting": {
-		"title": "Day Setting",
-		"order": 20,
-		"action": {
-			"type": "view",
-			"path": "webcam/day_setting"
-		}
-	},
-	"admin/services/webcam/night_setting": {
-		"title": "Night Setting",
-		"order": 30,
-		"action": {
-			"type": "view",
-			"path": "webcam/night_setting"
-		}
-	},
-	"admin/services/webcam/server": {
-		"title": "Server",
-		"order": 40,
-		"action": {
-			"type": "view",
-			"path": "webcam/server"
-		}
 	}
 }
