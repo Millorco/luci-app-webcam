@@ -18,7 +18,7 @@
 			"path": "webcam/ssh_keys"
 		}
 	},
-	"admin/services/sshtunnel/ssh_servers": {
+	"admin/services/webcam/ssh_servers": {
 		"title": "Servers",
 		"order": 20,
 		"action": {
