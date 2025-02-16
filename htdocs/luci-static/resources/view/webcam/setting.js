@@ -11,6 +11,9 @@ return view.extend({
 		m = new form.Map('setting', _(''),
 			_('Example Form Configuration.'));
 
+		s = m.section(form.TypedSection, 'general', _('General'));
+		s.anonymous = true;
+
 		s.option(form.Value, 'latitude', _('Latitude'),
 			_('Input for the first option'));
 
