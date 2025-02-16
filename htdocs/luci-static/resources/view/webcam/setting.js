@@ -5,8 +5,7 @@
 return view.extend({
 	render: function() {
 		let m, s, o;
-		m = new form.Map('webcam', _(''),
-			_('Example Form Configuration.'));
+		m = new form.Map('webcam', _(''));
 
 		s = m.section(form.TypedSection, 'general', _('General'));
 		s.anonymous = true;
