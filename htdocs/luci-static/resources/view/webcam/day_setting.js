@@ -5,10 +5,9 @@
 return view.extend({
 	render: function() {
 		let m, s, o;
-		m = new form.Map('webcam', _(''),
-			_('Example Form Configuration.'));
+		m = new form.Map('webcam', _(''));
 
-		s = m.section(form.TypedSection, 'day', _('Day Shutter'));
+		s = m.section(form.TypedSection, 'day', _('Day Shooting Settings'));
 		s.anonymous = true;		
 		
 		o = s.option(form.ListValue, 'iso_day', _('ISO'),
