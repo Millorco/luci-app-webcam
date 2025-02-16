@@ -52,7 +52,7 @@
 	},
 	"admin/services/webcam/schedule": {
 		"title": "Schedule",
-		"order": 50,
+		"order": 60,
 		"action": {
 			"type": "view",
 			"path": "webcam/schedule"
