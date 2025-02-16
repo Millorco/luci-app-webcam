@@ -7,17 +7,15 @@ return view.extend({
 		let m, s, o;
 		m = new form.Map('webcam', _(''));
 
-		s = m.section(form.TypedSection, 'general', _('General'));
+		s = m.section(form.TypedSection, 'general', _('General Setting'));
 		s.anonymous = true;
 
-		s.option(form.Value, 'latitude', _('Latitude'),
-			_('Input for the first option'));
+		s.option(form.Value, 'latitude', _('Latitude'));
 
-		s.option(form.Value, 'longitude', _('Longitude'),
-			_('Input for the first option'));
+		s.option(form.Value, 'longitude', _('Longitude'));
 			
 		o = s.option(form.Flag, 'faraday', _('Use Faraday'),
-			_('A boolean option'));
+			_('Select whether you want to use degrees Fahrenheit'));
 		o.default = '0';
 		o.rmempty = false;
 
