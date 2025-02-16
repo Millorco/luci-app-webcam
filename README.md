@@ -8,6 +8,10 @@ Whatchdog?
 
 Eventuale stazone meteo
 
+Leggere parametri config
+
+/sbin/uci get webcam.@general[0].latitude
+
 
 # Example app for js based Luci
 
