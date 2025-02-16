@@ -4,7 +4,7 @@
 		"order": 50,
 		"action": {
 			"type": "alias",
-			"path": "admin/services/webcam/ssh_tunnels"
+			"path": "admin/services/webcam/setting"
 		},
 		"depends": {
 			"acl": [ "luci-app-webcam" ]
