@@ -8,7 +8,6 @@ return view.extend({
 		m = new form.Map('webcam', _(''),
 			_('Example Form Configuration.'));
 
-
 		s = m.section(form.TypedSection, 'day', _('Day Shutter'));
 		s.anonymous = true;		
 		
