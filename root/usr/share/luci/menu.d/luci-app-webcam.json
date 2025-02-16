@@ -41,5 +41,13 @@
 			"type": "view",
 			"path": "webcam/night_setting"
 		}
+	},
+	"admin/services/webcam/up_server": {
+		"title": "Upload  Server",
+		"order": 50,
+		"action": {
+			"type": "view",
+			"path": "webcam/up_server"
+		}
 	}
 }
