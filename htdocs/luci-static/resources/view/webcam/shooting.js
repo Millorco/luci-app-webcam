@@ -1,4 +1,3 @@
-
 'use strict';
 'require view';
 'require form';
@@ -8,7 +7,6 @@ return view.extend({
 		let m, s, o;
 		m = new form.Map('webcam', _(''),
 			_('Example Form Configuration.'));
-
 
 		s = m.section(form.TypedSection, 'shooting', _('Generl shooting'));
 		s.anonymous = true;
