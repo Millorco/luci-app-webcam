@@ -10,36 +10,36 @@
 			"acl": [ "luci-app-webcam" ]
 		}
 	},
-	"admin/services/webcam/ssh_keys": {
+	"admin/services/webcam/setting": {
 		"title": "Setting",
 		"order": 10,
 		"action": {
 			"type": "view",
-			"path": "webcam/ssh_keys"
+			"path": "webcam/setting"
 		}
 	},
-	"admin/services/webcam/ssh_servers": {
+	"admin/services/webcam/shooting": {
 		"title": "Shooting",
 		"order": 20,
 		"action": {
 			"type": "view",
-			"path": "webcam/ssh_servers"
+			"path": "webcam/shooting"
 		}
 	},
-	"admin/services/webcam/ssh_tunnels": {
+	"admin/services/webcam/day_setting": {
 		"title": "Day Setting",
 		"order": 30,
 		"action": {
 			"type": "view",
-			"path": "webcam/ssh_tunnels"
+			"path": "webcam/day_setting"
 		}
 	},
-	"admin/services/webcam/ssh_hosts": {
+	"admin/services/webcam/night_setting": {
 		"title": "Night Setting",
 		"order": 40,
 		"action": {
 			"type": "view",
-			"path": "webcam/ssh_hosts"
+			"path": "webcam/night_setting"
 		}
 	}
 }
