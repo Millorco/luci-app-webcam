@@ -29,32 +29,8 @@ To install the luci-app-example to your OpenWrt instance (assuming your OpenWRT 
 ```sh
 scp -r root/* root@192.168.1.1:/
 scp -r htdocs/* root@192.168.1.1:/www/
-# execute the UCI defaults script to create the /etc/config/example
-ssh root@192.168.1.1 "sh /etc/uci-defaults/80_example"
+# execute the UCI defaults script to create the /etc/config/webcam
+ssh root@192.168.1.1 "sh /etc/uci-defaults/80_webcam"
 ```
 
-### From packages
 
-Install the app on your OpenWrt installation. This can be an actual router/device, or something like a QEMU virtual machine.
-
-`opkg install luci-app-example`
-
-Visit the web UI for the device/virtual machine where the package was installed.
-Log in to OpenWrt, and **Example** should be present in the navigation menu.
-
-## Code format
-
-The LuCI Javascript code should be indented with tabs.
-`js-beautify/jsbeautifier` can help with this.
-The examples in this application were formatted with:
-
-    js-beautify -t -a -j -w 110 -r <filename>
-
-
-## Translations
-
-For a real world application (or changes to this example one that you wish to submit upstream), translations should be kept up to date.
-
-To rebuild the translations file, from the root of the repository execute `./build/i18n-scan.pl applications/luci-app-example > applications/luci-app-example/po/templates/example.pot`
-
-If the scan command fails with an error about being unable to open/find `msguniq`, install the GNU `gettext` package for your operating system.
