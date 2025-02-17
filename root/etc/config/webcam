@@ -1,4 +1,6 @@
-
+#
+# Webcam setting
+#
 config general 'general'
         option latitude '12'
         option longitude '14'
