@@ -1,1 +1,28 @@
 
+config general 'general'
+        option latitude '12'
+        option longitude '14'
+        option faraday '1'
+
+config shooting 'shooting'
+        option imageformat '0'
+        option imagesize '0'
+        option imagequality '0'
+        option whitebalance '0'
+
+config day 'day'
+        option iso_day '0'
+        option aperture_day '0'
+        option shutterspeed_day '0'
+
+config night 'night'
+        option iso_night '0'
+        option aperture_night '0'
+        option shutterspeed_night '0'
+
+config server 'server'
+        option upload_server 'fagnano.eu'
+        option upload_directory 'prova'
+        option upload_username 'millo'
+        option upload_password 'passw'
+
