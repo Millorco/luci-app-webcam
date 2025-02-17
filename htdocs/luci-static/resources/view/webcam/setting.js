@@ -14,10 +14,13 @@ return view.extend({
 
 		s.option(form.Value, 'longitude', _('Longitude'));
 			
-		o = s.option(form.Flag, 'faraday', _('Use Faraday'),
-			_('Select whether you want to use degrees Fahrenheit'));
-		o.default = '0';
+		o = s.option(form.ListValue, 'temp_scale', _('Select temperature Scale'),
+			_('A select option'));
+		o.placeholder = 'placeholder';
+		o.value('c', 'Celsios');
+		o.value('f', 'Fahrenheit');
 		o.rmempty = false;
+		o.editable = true;
 
 		return m.render();
 	},
