@@ -24,7 +24,7 @@ In all cases, you'll want to log out of the web interface and back in to force a
 
 ### From git
 
-To install the luci-app-example to your OpenWrt instance (assuming your OpenWRT instance is on 192.168.1.1):
+To install the luci-app-webcam to your OpenWrt instance (assuming your OpenWRT instance is on 192.168.1.1):
 
 ```sh
 scp -r root/* root@192.168.1.1:/
