@@ -2,6 +2,7 @@
 config general 'general'
         option latitude '12'
         option longitude '14'
+        option photo_name 'raw'
         option faraday '1'
 
 config shooting 'shooting'
