@@ -24,8 +24,8 @@ config night 'night'
         option shutterspeed_night '0'
 
 config server 'server'
-        option upload_server 'fagnano.eu'
-        option upload_directory 'prova'
-        option upload_username 'millo'
+        option upload_server 'example.com'
+        option upload_directory 'photos'
+        option upload_username 'user'
         option upload_password 'passw'
 
