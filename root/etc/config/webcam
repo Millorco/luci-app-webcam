@@ -6,6 +6,8 @@ config general 'general'
         option longitude '14'
         option photo_name 'raw'
         option temp_scale 'c'
+        option heating '1'
+        option fan '1'
 
 config shooting 'shooting'
         option imageformat '0'
