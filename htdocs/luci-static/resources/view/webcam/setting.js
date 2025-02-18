@@ -22,21 +22,16 @@ return view.extend({
 		o.rmempty = false;
 		o.editable = true;
 
-		o = s.option(form.ListValue, 'heating', _('Have you installed a heater ?'),
-			_('A select option'));
-		o.placeholder = 'placeholder';
-		o.value('1', 'Yes');
-		o.value('0', 'No');
+		o = s.option(form.Flag, 'heating', _('Have you installed a heater ?'),
+			_('A boolean option'));
+		o.default = '1';
 		o.rmempty = false;
-		o.editable = true;
 
-		o = s.option(form.ListValue, 'fan', _('have you installed a fun ?'),
-			_('A select option'));
-		o.placeholder = 'placeholder';
-		o.value('1', 'Yes');
-		o.value('0', 'No');
+		o = s.option(form.Flag, 'heating', _('Have you installed a fun ?'),
+			_('A boolean option'));
+		o.default = '1';
 		o.rmempty = false;
-		o.editable = true;
+
 		return m.render();
 	},
 });
