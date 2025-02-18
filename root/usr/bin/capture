@@ -7,6 +7,24 @@
 
 . /usr/bin//webcam.cfg
 
+NOW=$(date +"%Y%m%d-%H%M")
+FILENAME="webcam_$NOW.jpg"
+
+# Verifica se GIORNO o NOTTE
+dn=$(php dn.php)
+
+# MODALITA' GIORNO
+if [ $dn = "1" ]
+then
+echo "Scatto foto in modalità giorno"
+
+else
+if [ $dn = "2" ]
+then
+echo "Abilito la modalità notte"
+
+fi
+
 #
 # Funzione start
 #
