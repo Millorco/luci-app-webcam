@@ -1,1 +1,116 @@
+#
+# Funzione start
+#
+function start {
+  rm -f *.jpg 2>/dev/null
+
+  # Heizung aus, um genug Strom zu haben
+  webcam_heater tmpoff
+
+  echo "$wc_name $now: Capture image..."
+  gphoto2 --set-config eosremoterelease=3 \
+          --set-config eosremoterelease=4 \
+          --capture-tethered=80s --hook-script=$0 |\
+          grep -v Property 2>&1
+
+  # Heizung wieder auf vorherigen Stand
+  webcam_heater reset
+
+  # Grundzustand der Kamera wieder herstellen
+  gphoto2 --set-config eosremoterelease=3 2>&1
+
+  mv *.jpg raw.jpg || return 1
+
+  echo "$wc_name $now: Upload image..."
+  echo "state=upload" | curl -s --form log=@- $wc_curlpar/log.php
+  curl -sw '\n%{time_total}s %{size_upload}Bytes %{speed_upload}Bytes/s\n' \
+     --limit-rate 100k \
+     --form upload=@raw.jpg --form now=$now $wc_curlpar/upload.php
+}
+
+#
+# Funzione check day night
+#
+function day_night {
+  rm -f *.jpg 2>/dev/null
+
+  # Heizung aus, um genug Strom zu haben
+  webcam_heater tmpoff
+
+  echo "$wc_name $now: Capture image..."
+  gphoto2 --set-config eosremoterelease=3 \
+          --set-config eosremoterelease=4 \
+          --capture-tethered=80s --hook-script=$0 |\
+          grep -v Property 2>&1
+
+  # Heizung wieder auf vorherigen Stand
+  webcam_heater reset
+
+  # Grundzustand der Kamera wieder herstellen
+  gphoto2 --set-config eosremoterelease=3 2>&1
+
+  mv *.jpg raw.jpg || return 1
+
+  echo "$wc_name $now: Upload image..."
+  echo "state=upload" | curl -s --form log=@- $wc_curlpar/log.php
+  curl -sw '\n%{time_total}s %{size_upload}Bytes %{speed_upload}Bytes/s\n' \
+     --limit-rate 100k \
+     --form upload=@raw.jpg --form now=$now $wc_curlpar/upload.php
+}
+
+
+
+#
+# Funzione cattura per giorno
+#
+function capture_day {
+	rm -f *.jpg 2>/dev/null
+
+  # Heizung aus, um genug Strom zu haben
+  webcam_heater tmpoff
+
+  echo "$wc_name $now: Capture image..."
+  gphoto2 --set-config eosremoterelease=3 \
+          --set-config eosremoterelease=4 \
+          --capture-tethered=80s --hook-script=$0 |\
+          grep -v Property 2>&1
+
+  # Heizung wieder auf vorherigen Stand
+  webcam_heater reset
+  upload
+}
+
+#
+# Funzione cattura per Notte
+#
+function capture_night {
+	rm -f *.jpg 2>/dev/null
+  
+  # Heizung aus, um genug Strom zu haben
+  webcam_heater tmpoff
+
+  echo "$wc_name $now: Capture image..."
+  gphoto2 --set-config eosremoterelease=3 \
+          --set-config eosremoterelease=4 \
+          --capture-tethered=80s --hook-script=$0 |\
+          grep -v Property 2>&1
+
+  # Heizung wieder auf vorherigen Stand
+  webcam_heater reset
+  upload
+}
+
+#
+# Funzione Upload Foto
+#
+function upload {
+
+  mv *.jpg raw.jpg || return 1
+
+  echo "$wc_name $now: Upload image..."
+  echo "state=upload" | curl -s --form log=@- $wc_curlpar/log.php
+  curl -sw '\n%{time_total}s %{size_upload}Bytes %{speed_upload}Bytes/s\n' \
+     --limit-rate 100k \
+     --form upload=@raw.jpg --form now=$now $wc_curlpar/upload.php
+}
 
