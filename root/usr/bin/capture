@@ -35,64 +35,14 @@ ALBA="XXX"
 # Confronta orari: se l'ora corrente è tra alba e tramonto, è giorno, altrimenti è notte
 if [[ "$CURRENT_TIME" > "$ALBA" ]] && [[ "$CURRENT_TIME" < "$TRAMONTO" ]]; then
     echo "È giorno!"
+	capture_day
 elif [[ "$CURRENT_TIME" > "$TRAMONTO" ]] && [[ "$CURRENT_TIME" < "$ALBA" ]]; then
     echo "È notte!"
+	capture_night
 else
   echo "Qualcosa è andato storto"
 fi
 }
-
-
-
-
-#
-# Funzione check day night 2
-#
-function start {
-
-# Chiamata all'API Sunrise-Sunset (in formato UTC)
-API_URL="https://api.sunrise-sunset.org/json?lat=$wc_latitude&lng=$wc_longitude&formatted=0"
-RESPONSE=$(curl -s "$API_URL")
-
-# Estrai l'orario di alba, tramonto e l'orario corrente
-ALBA=$(echo $RESPONSE | jq -r '.results.sunrise' | cut -d'T' -f2 | cut -d'Z' -f1)
-TRAMONTO=$(echo $RESPONSE | jq -r '.results.sunset' | cut -d'T' -f2 | cut -d'Z' -f1)
-CURRENT_TIME=$(date -u +%H:%M)
-
-# Confronta orari: se è tra alba e tramonto, è giorno, altrimenti è notte
-if [[ "$CURRENT_TIME" > "$ALBA" ]] && [[ "$CURRENT_TIME" < "$TRAMONTO" ]]; then
-    echo "È giorno!"
-	capture_day
-else
-    echo "È notte!"
-	capture_night
-fi
-}
-
-
-#
-# Funzione check day night 3
-#
-function start {
-
-# Ottieni l'orario corrente in formato ora:minuti (es. 15:30)
-CURRENT_TIME=$(date +%H:%M)
-
-# Ottieni gli orari di alba e tramonto per la data e la posizione specificata
-ALBA=$(sunwait rise $wc_latitude $wc_longitude 2>/dev/null)
-TRAMONTO=$(sunwait set $wc_latitude $wc_longitude 2>/dev/null)
-
-# Verifica se l'orario corrente è tra alba e tramonto
-if [[ "$CURRENT_TIME" > "$ALBA" ]] && [[ "$CURRENT_TIME" < "$TRAMONTO" ]]; then
-    echo "È giorno!"
-	capture_day
-else
-    echo "È notte!"
-	capture_night
-fi
-}
-
-
 
 
 #
