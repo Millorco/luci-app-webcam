@@ -6,6 +6,7 @@
 #
 
 . /usr/bin//webcam.cfg
+cd /tmp
 
 NOW=$(date +"%Y%m%d-%H%M")
 FILENAME="webcam_$NOW.jpg"
