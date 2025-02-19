@@ -63,6 +63,29 @@ fi
 }
 
 
+#
+# Funzione check day night 3
+#
+function start {
+
+# Ottieni l'orario corrente in formato ora:minuti (es. 15:30)
+CURRENT_TIME=$(date +%H:%M)
+
+# Ottieni gli orari di alba e tramonto per la data e la posizione specificata
+ALBA=$(sunwait rise $wc_latitude $wc_longitude 2>/dev/null)
+TRAMONTO=$(sunwait set $wc_latitude $wc_longitude 2>/dev/null)
+
+# Verifica se l'orario corrente è tra alba e tramonto
+if [[ "$CURRENT_TIME" > "$ALBA" ]] && [[ "$CURRENT_TIME" < "$TRAMONTO" ]]; then
+    echo "È giorno!"
+	capture_day
+else
+    echo "È notte!"
+	capture_night
+fi
+}
+
+
 
 
 #
