@@ -112,7 +112,7 @@ gphoto2 --set-config eosremoterelease=3 \
 --wait-event-and-download=4s \
 --capture-image-and-download \
 --force-overwrite \
---filename $DIR/images/now-HQ/$FILENAME >/dev/null
+--filename $FILENAME >/dev/null
           grep -v Property 2>&1
 
   # Heizung wieder auf vorherigen Stand
@@ -143,7 +143,7 @@ gphoto2 --set-config eosremoterelease=3 \
 --wait-event-and-download=4s \
 --capture-image-and-download \
 --force-overwrite \
---filename $DIR/images/now-HQ/$FILENAME >/dev/null
+--filename $FILENAME >/dev/null
           grep -v Property 2>&1
 
   # Heizung wieder auf vorherigen Stand
