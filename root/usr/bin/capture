@@ -98,9 +98,20 @@ function capture_day {
   webcam_heater tmpoff
 
   echo "$wc_name $now: Capture image..."
-  gphoto2 --set-config eosremoterelease=3 \
-          --set-config eosremoterelease=4 \
-          --capture-tethered=80s --hook-script=$0 |\
+gphoto2 --set-config eosremoterelease=3 \
+--set-config eosremoterelease=4 \
+--set-config imagesize=0 \
+--set-config imageformat=0 \
+--set-config imagequality=0 \
+--set-config whitebalance=0 \
+--set-config iso=0 \
+--set-config aperture=0 \
+--set-config shutterspeed=0 \
+--get-all-metadata \
+--wait-event-and-download=4s \
+--capture-image-and-download \
+--force-overwrite \
+--filename $DIR/images/now-HQ/$FILENAME >/dev/null
           grep -v Property 2>&1
 
   # Heizung wieder auf vorherigen Stand
@@ -118,9 +129,20 @@ function capture_night {
   webcam_heater tmpoff
 
   echo "$wc_name $now: Capture image..."
-  gphoto2 --set-config eosremoterelease=3 \
-          --set-config eosremoterelease=4 \
-          --capture-tethered=80s --hook-script=$0 |\
+gphoto2 --set-config eosremoterelease=3 \
+--set-config eosremoterelease=4 \
+--set-config imagesize=0 \
+--set-config imageformat=0 \
+--set-config imagequality=0 \
+--set-config whitebalance=0 \
+--set-config iso=0 \
+--set-config aperture=0 \
+--set-config shutterspeed=0 \
+--get-all-metadata \
+--wait-event-and-download=4s \
+--capture-image-and-download \
+--force-overwrite \
+--filename $DIR/images/now-HQ/$FILENAME >/dev/null
           grep -v Property 2>&1
 
   # Heizung wieder auf vorherigen Stand
