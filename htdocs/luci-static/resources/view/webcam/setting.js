@@ -10,8 +10,10 @@ return view.extend({
 		s = m.section(form.TypedSection, 'general', _('General Setting'));
 		s.anonymous = true;
 
-		s.option(form.Value, 'latitude', _('Latitude'));
+		s.option(form.Value, 'photo_name', _('Photo File Name'));
 
+		s.option(form.Value, 'latitude', _('Latitude'));
+		
 		s.option(form.Value, 'longitude', _('Longitude'));
 			
 		o = s.option(form.ListValue, 'temp_scale', _('Select temperature Scale'),
