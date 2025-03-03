@@ -9,7 +9,15 @@
 cd /tmp
 
 NOW=$(date +"%Y%m%d-%H%M")
+echo "Today is " $NOW
+
+read -p "Press key to continue.. " -n1 -s
+
 FILENAME="webcam_$NOW.jpg"
+
+echo "Filename is  " $FILENAME
+
+read -p "Press key to continue.. " -n1 -s
 
 #
 # Funzione check day night 1
@@ -23,15 +31,27 @@ RESPONSE=$(curl -s "$API_URL")
 # Estrai l'orario di alba e tramonto dalla risposta JSON
 ALBA=$(echo "$RESPONSE" | grep -o '"sunrise":"[^"]*' | cut -d '"' -f 4 | cut -d 'T' -f2 | cut -d 'Z' -f1)
 TRAMONTO=$(echo "$RESPONSE" | grep -o '"sunset":"[^"]*' | cut -d '"' -f 4 | cut -d 'T' -f2 | cut -d 'Z' -f1)
+echo "Orario Alba " $ALBA
+echo "Orario Tramonto " $TRAMONTO
+
+read -p "Press key to continue.. " -n1 -s
 
 # Ottieni l'orario corrente in formato UTC (ora:minuti)
 CURRENT_TIME=$(date -u +%H:%M)
 
+echo "Ora Corrente " $CURRENT_TIME
+
+read -p "Press key to continue.. " -n1 -s
+
 # Confronta orari: se l'ora corrente è tra alba e tramonto, è giorno, altrimenti è notte
 if [[ "$CURRENT_TIME" > "$ALBA" ]] && [[ "$CURRENT_TIME" < "$TRAMONTO" ]]; then
-	capture_day
+	echo "Cattura giorno"
+read -p "Press key to continue.. " -n1 -s
+	#capture_day
 elif [[ "$CURRENT_TIME" > "$TRAMONTO" ]] && [[ "$CURRENT_TIME" < "$ALBA" ]]; then
-	capture_night
+	echo "Cattura Notte"
+read -p "Press key to continue.. " -n1 -s
+	#capture_night
 else
   echo "Qualcosa è andato storto"
 fi
