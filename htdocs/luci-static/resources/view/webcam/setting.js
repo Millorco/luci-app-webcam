@@ -10,6 +10,14 @@ return view.extend({
 		s = m.section(form.TypedSection, 'general', _('General Setting'));
 		s.anonymous = true;
 
+		o = s.option(form.ListValue, 'maintenance_mode', _('Maintenance Mode'),
+			_('A select option'));
+		o.placeholder = 'placeholder';
+		o.value('yes', 'Yes');
+		o.value('no', 'No');
+		o.rmempty = false;
+		o.editable = true;
+		
 		s.option(form.Value, 'photo_name', _('Photo File Name'));
 
 		s.option(form.Value, 'latitude', _('Latitude'));
