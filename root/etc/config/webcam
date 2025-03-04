@@ -2,6 +2,7 @@
 # Webcam setting
 #
 config general 'general'
+        opyion maintenance_mode 'no'
         option latitude '12'
         option longitude '14'
         option photo_name 'raw'
