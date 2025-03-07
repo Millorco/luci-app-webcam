@@ -134,3 +134,13 @@ function upload {
      --form upload=@raw.jpg --form now=$now $wc_curlpar/upload.php
 }
 
+
+#
+# Funzione echo
+#
+function prova {
+
+   echo "$wc_name $now: Upload image..."
+  }
+
+prova
