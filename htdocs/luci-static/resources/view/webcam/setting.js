@@ -32,12 +32,7 @@ return view.extend({
 		o.rmempty = false;
 		o.editable = true;
 
-		o = s.option(form.Flag, 'heating', _('Have you installed a heater ?'),
-			_('A boolean option'));
-		o.default = '1';
-		o.rmempty = false;
-
-		o = s.option(form.Flag, 'heating', _('Have you installed a fun ?'),
+		o = s.option(form.Flag, 'heating', _('Have you installed a heater with a fan ?'),
 			_('A boolean option'));
 		o.default = '1';
 		o.rmempty = false;
