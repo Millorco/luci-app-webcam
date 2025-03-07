@@ -28,3 +28,7 @@ ssh root@192.168.1.1 "sh /etc/uci-defaults/80_webcam"
 ```
 
 
+chmod 755 /usr/bin/capture
+chmod 755 /usr/bin/webcam.cfg
+
+
