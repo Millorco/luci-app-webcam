@@ -3,7 +3,7 @@
 
 include $(TOPDIR)/rules.mk
 
-LUCI_TITLE:=LuCI webcam app for js based luci
+LUCI_TITLE:=LuCI Webcam app for gPhoto
 LUCI_DEPENDS:=+luci-base
 LUCI_PKGARCH:=all
 
