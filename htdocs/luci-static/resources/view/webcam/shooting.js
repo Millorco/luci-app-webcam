@@ -50,15 +50,17 @@ return view.extend({
 			_('A select option'));
 		o.placeholder = 'placeholder';
 		o.value('0', 'Auto');
-		o.value('1', 'Daylight');
-		o.value('2', 'Cloudy');
-		o.value('3', 'Tungsten');
-		o.value('4', 'Fluorescent');
-		o.value('5', 'Fluorescent H');
-		o.value('6', 'Unknown value 0005');
-		o.value('7', 'Custom');
+		o.value('1', 'AWB White');
+		o.value('2', 'Daylight');
+		o.value('3', 'Shadow');
+		o.value('4', 'Cloudy');
+		o.value('5', 'Tungsten');
+		o.value('6', 'Fluorescent');
+		o.value('7', 'Flash');
+		o.value('8', 'Manual');
 		o.rmempty = false;
-		o.editable = true;				
+		o.editable = true;
+			
 
 		return m.render();
 	},
