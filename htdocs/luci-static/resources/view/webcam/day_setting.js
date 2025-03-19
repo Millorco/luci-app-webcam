@@ -18,6 +18,9 @@ return view.extend({
 		o.value('2', 'ISO 200');
 		o.value('3', 'ISO 400');
 		o.value('4', 'ISO 800');
+		o.value('5', 'ISO 1600');
+		o.value('6', 'ISO 3200');
+		o.value('7', 'ISO 6400');
 		o.rmempty = false;
 		o.editable = true;		
 		
