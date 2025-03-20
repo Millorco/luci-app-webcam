@@ -20,7 +20,8 @@ return view.extend({
 
 		s.option(form.Value, 'latitude', _('Latitude'));
 		
-		s.option(form.Value, 'longitude', _('Longitude'));
+		s.option(form.Value, 'longitude', _('Longitude'),
+			_('Find LAt Long'));
 			
 		o = s.option(form.ListValue, 'temp_scale', _('Select temperature Scale'));
 		o.value('c', 'Celsios');
@@ -28,8 +29,7 @@ return view.extend({
 		o.rmempty = false;
 		o.editable = true;
 
-		o = s.option(form.Flag, 'heating', _('Have you installed a heater with a fan ?'),
-			_('A boolean option'));
+		o = s.option(form.Flag, 'heating', _('Have you installed a heater with a fan ?'));
 		o.default = '1';
 		o.rmempty = false;
 
