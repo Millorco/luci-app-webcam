@@ -10,9 +10,7 @@ return view.extend({
 		s = m.section(form.TypedSection, 'general', _('General Setting'));
 		s.anonymous = true;
 
-		o = s.option(form.ListValue, 'maintenance_mode', _('Maintenance Mode'),
-			_('A select option'));
-		o.placeholder = 'placeholder';
+		o = s.option(form.ListValue, 'maintenance_mode', _('Maintenance Mode'));
 		o.value('yes', 'Yes');
 		o.value('no', 'No');
 		o.rmempty = false;
@@ -24,9 +22,7 @@ return view.extend({
 		
 		s.option(form.Value, 'longitude', _('Longitude'));
 			
-		o = s.option(form.ListValue, 'temp_scale', _('Select temperature Scale'),
-			_('A select option'));
-		o.placeholder = 'placeholder';
+		o = s.option(form.ListValue, 'temp_scale', _('Select temperature Scale'));
 		o.value('c', 'Celsios');
 		o.value('f', 'Fahrenheit');
 		o.rmempty = false;
