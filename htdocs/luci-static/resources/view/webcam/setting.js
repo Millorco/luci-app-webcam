@@ -20,7 +20,7 @@ return view.extend({
 		s.option(form.Value, 'latitude', _('Latitude'));
 		
 		s.option(form.Value, 'longitude', _('Longitude'),
-			_('Find Lat Long (<a href="http://prova.com" target="_blank">Click here</a>)'));
+			_('Find the coordinates (<a href="https://www.latlong.net" target="_blank">Click here</a>)'));
 			
 		o = s.option(form.ListValue, 'temp_scale', _('Select temperature Scale'));
 		o.value('c', 'Celsius');
