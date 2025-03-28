@@ -47,21 +47,25 @@ void loop() {
 			lastHeartbeatTime = millis();
 			
 	} else if (command == "camera_on") {  // turn on Camera
-			digitalWrite(2, HIGH);
-	} else if (command == "camera_off") {  // turn off Camera
 			digitalWrite(2, LOW);
+	} else if (command == "camera_off") {  // turn off Camera
+			digitalWrite(2, HIGH);
 	} else if (command == "heating_on") {  // turn on Heating
 			digitalWrite(3, HIGH);
 	} else if (command == "heating_off") {  // turn off Heating
 			digitalWrite(3, LOW);
 	} else if (command == "pc_on") {  // turn on Heating
-			digitalWrite(4, HIGH);
-	} else if (command == "pc_off") {  // turn off Heating
 			digitalWrite(4, LOW);
+	} else if (command == "pc_off") {  // turn off Heating
+			digitalWrite(4, HIGH);
 	} else if (command == "fun_on") {  // turn on Fun
 			digitalWrite(5, HIGH);
 	} else if (command == "fun_off") {  // turn off Fun
 			digitalWrite(5, LOW);
+	} else if (command == "test1_on") {  // turn on LED
+			digitalWrite(10, HIGH);
+	} else if (command == "test1_off") {  // turn off LED
+			digitalWrite(10, LOW);
 	} else if (command == "test_on") {  // turn on LED
 			digitalWrite(13, HIGH);
 	} else if (command == "test_off") {  // turn off LED
