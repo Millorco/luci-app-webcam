@@ -1,5 +1,4 @@
 #include <Wire.h>
-
 #include "SHTSensor.h"
 
 SHTSensor sht;
@@ -19,6 +18,7 @@ void setup() {
 	pinMode(3, OUTPUT); // sets pin 3 as output for Heating
 	pinMode(4, OUTPUT); // sets pin 4 as output for PC
 	pinMode(5, OUTPUT); // sets pin 5 as output for Fun
+	pinMode(10, OUTPUT); // sets pin 10 as output TEST
   	pinMode(13, OUTPUT); // sets pin 13 as output TEST
 	
   	delay(1000); // let serial console settle
@@ -43,9 +43,9 @@ void loop() {
 	// Read and execute commands from serial port
 	if (Serial.available()) {  // check for incoming serial data
 		String command = Serial.readString();  // read command from serial port
-		if (command == "PING") { // Heartbeat signal
+	
+	if (command == "PING") { // Heartbeat signal
 			lastHeartbeatTime = millis();
-			
 	} else if (command == "camera_on") {  // turn on Camera
 			digitalWrite(2, LOW);
 	} else if (command == "camera_off") {  // turn off Camera
@@ -82,6 +82,7 @@ void loop() {
 
 void resetFunc() {
 			digitalWrite(4, HIGH);
+			lastHeartbeatTime = millis();
 			delay(1000);
 			digitalWrite(4, LOW);
 }
