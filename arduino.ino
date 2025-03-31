@@ -44,33 +44,33 @@ void loop() {
 	if (Serial.available()) {  // check for incoming serial data
 		String command = Serial.readString();  // read command from serial port
 	
-	if (command == "PING") { // Heartbeat signal
+	if (command == "p") { // Heartbeat signal
 			lastHeartbeatTime = millis();
-	} else if (command == "camera_on") {  // turn on Camera
+	} else if (command == "C") {  // turn on Camera
 			digitalWrite(2, LOW);
-	} else if (command == "camera_off") {  // turn off Camera
+	} else if (command == "c") {  // turn off Camera
 			digitalWrite(2, HIGH);
-	} else if (command == "heating_on") {  // turn on Heating
+	} else if (command == "H") {  // turn on Heating
 			digitalWrite(3, HIGH);
-	} else if (command == "heating_off") {  // turn off Heating
+	} else if (command == "h") {  // turn off Heating
 			digitalWrite(3, LOW);
-	} else if (command == "pc_on") {  // turn on Heating
+	} else if (command == "P") {  // turn on Heating
 			digitalWrite(4, LOW);
-	} else if (command == "pc_off") {  // turn off Heating
+	} else if (command == "p") {  // turn off Heating
 			digitalWrite(4, HIGH);
-	} else if (command == "fun_on") {  // turn on Fun
+	} else if (command == "F") {  // turn on Fun
 			digitalWrite(5, HIGH);
-	} else if (command == "fun_off") {  // turn off Fun
+	} else if (command == "f") {  // turn off Fun
 			digitalWrite(5, LOW);
-	} else if (command == "test1_on") {  // turn on LED
+	} else if (command == "X") {  // turn on LED
 			digitalWrite(10, HIGH);
-	} else if (command == "test1_off") {  // turn off LED
+	} else if (command == "x") {  // turn off LED
 			digitalWrite(10, LOW);
-	} else if (command == "test_on") {  // turn on LED
+	} else if (command == "T") {  // turn on LED
 			digitalWrite(13, HIGH);
-	} else if (command == "test_off") {  // turn off LED
+	} else if (command == "t") {  // turn off LED
 			digitalWrite(13, LOW);
-	} else if (command == "read_T") {  // read and send A0 analog value
+	} else if (command == "r") {  // read and send A0 analog value
       sht.readSample();
       Serial.print(sht.getHumidity(), 2);
       Serial.print(" ");
