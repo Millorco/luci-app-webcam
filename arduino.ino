@@ -54,23 +54,23 @@ void loop() {
 			digitalWrite(3, HIGH);
 	} else if (command == "h") {  // turn off Heating
 			digitalWrite(3, LOW);
-	} else if (command == "P") {  // turn on Heating
+	} else if (command == "P") {  // turn on PC
 			digitalWrite(4, LOW);
-	} else if (command == "p") {  // turn off Heating
+	} else if (command == "p") {  // turn off PC
 			digitalWrite(4, HIGH);
 	} else if (command == "F") {  // turn on Fun
 			digitalWrite(5, HIGH);
 	} else if (command == "f") {  // turn off Fun
 			digitalWrite(5, LOW);
-	} else if (command == "X") {  // turn on LED
+	} else if (command == "X") {  // turn on TEST
 			digitalWrite(10, HIGH);
-	} else if (command == "x") {  // turn off LED
+	} else if (command == "x") {  // turn off TEST
 			digitalWrite(10, LOW);
 	} else if (command == "T") {  // turn on LED
 			digitalWrite(13, HIGH);
 	} else if (command == "t") {  // turn off LED
 			digitalWrite(13, LOW);
-	} else if (command == "r") {  // read and send A0 analog value
+	} else if (command == "r") {  // read and send Temp sensor
       sht.readSample();
       Serial.print(sht.getHumidity(), 2);
       Serial.print(" ");
