@@ -1,5 +1,8 @@
 #include <Wire.h>
 #include "SHTSensor.h"
+#include <SoftwareSerial.h>
+
+SoftwareSerial PCSerial(10, 11); // RX, TX
 
 SHTSensor sht;
 // To use a specific sensor instead of probing the bus use this command:
@@ -13,22 +16,23 @@ String inputString = "";
 void setup() {
 	Wire.begin();
 	Serial.begin(115200);
+	PCSerial.begin(115200);
 	lastHeartbeatTime = millis(); // Inizializza il timer all'avvio
 	pinMode(2, OUTPUT); // sets pin 2 as output for Camera Power
 	pinMode(3, OUTPUT); // sets pin 3 as output for Heating
 	pinMode(4, OUTPUT); // sets pin 4 as output for PC
 	pinMode(5, OUTPUT); // sets pin 5 as output for Fun
 	pinMode(10, OUTPUT); // sets pin 10 as output TEST
-  	pinMode(13, OUTPUT); // sets pin 13 as output TEST
+	pinMode(13, OUTPUT); // sets pin 13 as output TEST
 	
-  	delay(1000); // let serial console settle
+	delay(1000); // let serial console settle
 
-  if (sht.init()) {
-      Serial.print("init(): success\n");
-  } else {
-      Serial.print("init(): failed\n");
-  }
-  sht.setAccuracy(SHTSensor::SHT_ACCURACY_MEDIUM); // only supported by SHT3x
+	if (sht.init()) {
+		Serial.print("init(): success\n");
+	} else {
+		Serial.print("init(): failed\n");
+	}
+	sht.setAccuracy(SHTSensor::SHT_ACCURACY_MEDIUM); // only supported by SHT3x
 }
 
 
@@ -41,8 +45,8 @@ void loop() {
 	}	
 	
 	// Read and execute commands from serial port
-	if (Serial.available()) {  // check for incoming serial data
-		String command = Serial.readString();  // read command from serial port
+	if (PCSerial.available()) {  // check for incoming serial data
+		String command = PCSerial.readString();  // read command from serial port
 	
 	if (command == "p") { // Heartbeat signal
 			lastHeartbeatTime = millis();
@@ -71,13 +75,13 @@ void loop() {
 	} else if (command == "t") {  // turn off LED
 			digitalWrite(13, LOW);
 	} else if (command == "r") {  // read and send Temp sensor
-      sht.readSample();
-      Serial.print(sht.getHumidity(), 2);
-      Serial.print(" ");
-      Serial.print(sht.getTemperature(), 2);
-      Serial.print("\n");
-      }
-   }
+		sht.readSample();
+		PCSerial.print(sht.getHumidity(), 2);
+		PCSerial.print(" ");
+		PCSerial.print(sht.getTemperature(), 2);
+		PCSerial.print("\n");
+		}
+	}
 }
 
 void resetFunc() {
