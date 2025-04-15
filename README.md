@@ -31,6 +31,7 @@ ssh root@192.168.1.1 "sh /etc/uci-defaults/80_webcam"
 chmod 755 /usr/bin/capture
 chmod 755 /usr/bin/webcam.cfg
 
-stty -F /dev/ttyUSB0 115200 raw -echo 
+stty -F /dev/ttyUSB0 115200 raw -echo
+
 echo -ne "T" > /dev/ttySXXX
 
