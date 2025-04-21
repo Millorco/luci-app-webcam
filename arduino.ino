@@ -1,6 +1,6 @@
 #include <Wire.h>
-#include "SHTSensor.h"
 #include <SoftwareSerial.h>
+#include "SHTSensor.h"
 
 SoftwareSerial PCSerial(10, 11); // RX, TX
 
