@@ -1,17 +1,11 @@
 #include <Wire.h>
 #include <SoftwareSerial.h>
-#include "SHTSensor.h"
 
 SoftwareSerial PCSerial(10, 11); // RX, TX
-
-SHTSensor sht;
-// To use a specific sensor instead of probing the bus use this command:
-// SHTSensor sht(SHTSensor::SHT3X);
 
 const unsigned long HEARTBEAT_TIMEOUT = 600000; // 10 minuti in millisecondi
 unsigned long lastHeartbeatTime = 0;
 String inputString = "";
-
 
 void setup() {
 	Wire.begin();
@@ -27,12 +21,6 @@ void setup() {
 	
 	delay(1000); // let serial console settle
 
-	if (sht.init()) {
-		Serial.print("init(): success\n");
-	} else {
-		Serial.print("init(): failed\n");
-	}
-	sht.setAccuracy(SHTSensor::SHT_ACCURACY_MEDIUM); // only supported by SHT3x
 }
 
 
@@ -74,14 +62,8 @@ void loop() {
 			digitalWrite(13, HIGH);
 	} else if (command == "t") {  // turn off LED
 			digitalWrite(13, LOW);
-	} else if (command == "r") {  // read and send Temp sensor
-		sht.readSample();
-		PCSerial.print(sht.getHumidity(), 2);
-		PCSerial.print(" ");
-		PCSerial.print(sht.getTemperature(), 2);
-		PCSerial.print("\n");
-		}
-	}
+	} 
+}
 }
 
 void resetFunc() {
