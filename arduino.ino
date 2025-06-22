@@ -9,8 +9,8 @@ String inputString = "";
 
 void setup() {
 	Wire.begin();
-	Serial.begin(115200);
-	PCSerial.begin(115200);
+	Serial.begin(9600);
+	PCSerial.begin(9600);
 	lastHeartbeatTime = millis(); // Inizializza il timer all'avvio
 	pinMode(2, OUTPUT); // sets pin 2 as output for Camera Power
 	pinMode(3, OUTPUT); // sets pin 3 as output for Heating
