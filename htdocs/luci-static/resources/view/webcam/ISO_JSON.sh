@@ -1,20 +1,8 @@
 #!/bin/bash
-
-# Script per salvare la configurazione ISO di gphoto2 in formato JSON
-# Uso: ./gphoto2_iso_to_json.sh [nome_file_output.json]
-
-# Nome del file di output (default: iso_config.json)
 OUTPUT_FILE="${1:-iso_config.json}"
-
-
 
 # Ottieni l'output di gphoto2
 RAW_OUTPUT=$(gphoto2 --get-config /main/imgsettings/iso 2>/dev/null)
-
-if [ $? -ne 0 ]; then
-    echo "Errore durante il recupero della configurazione ISO" >&2
-    exit 1
-fi
 
 # Parsing dell'output e conversione in JSON
 echo "$RAW_OUTPUT" | awk '
