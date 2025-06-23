@@ -36,13 +36,3 @@ END {
     print "]"
 }
 ' > "$OUTPUT_FILE"
-
-if [ $? -eq 0 ]; then
-    echo "Configurazione ISO salvata in: $OUTPUT_FILE"
-    echo "Contenuto del file JSON:"
-    echo "========================"
-    cat "$OUTPUT_FILE"
-else
-    echo "Errore durante la creazione del file JSON" >&2
-    exit 1
-fi
