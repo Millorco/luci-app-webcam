@@ -1,0 +1,26 @@
+#!/bin/sh
+
+SERIAL_PORT="/dev/ttyS0" # Assicurati che questo sia il percorso corretto della tua porta seriale
+BAUD_RATE="9600"
+HEARTBEAT_SIGNAL='\x06' # Esempio: un byte ACK. Sostituisci con il tuo segnale desiderato
+
+# Configura la porta seriale
+# Reindirizza l'output di errore di stty a /dev/null per evitare messaggi inutili nei log
+stty -F "$SERIAL_PORT" "$BAUD_RATE" cs8 -parenb -cstopb 2>/dev/null
+
+# Controlla se la configurazione è andata a buon fine (opzionale ma consigliato per debug)
+if [ $? -ne 0 ]; then
+    echo "Errore: Impossibile configurare la porta seriale $SERIAL_PORT" >&2
+    exit 1
+fi
+
+# Invia il segnale heartbeat
+printf "$HEARTBEAT_SIGNAL" > "$SERIAL_PORT"
+
+# Controlla se l'invio è andato a buon fine (opzionale ma consigliato)
+if [ $? -ne 0 ]; then
+    echo "Errore: Impossibile inviare il segnale sulla porta seriale $SERIAL_PORT" >&2
+    exit 1
+fi
+
+exit 0
