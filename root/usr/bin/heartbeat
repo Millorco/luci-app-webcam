@@ -2,7 +2,7 @@
 
 SERIAL_PORT="/dev/ttyS0" # Assicurati che questo sia il percorso corretto della tua porta seriale
 BAUD_RATE="9600"
-HEARTBEAT_SIGNAL='\x06' # Esempio: un byte ACK. Sostituisci con il tuo segnale desiderato
+HEARTBEAT_SIGNAL='p' # Esempio: un byte ACK. Sostituisci con il tuo segnale desiderato
 
 # Configura la porta seriale
 # Reindirizza l'output di errore di stty a /dev/null per evitare messaggi inutili nei log
