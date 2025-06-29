@@ -36,7 +36,7 @@ void loop() {
 	if (PCSerial.available()) {  // check for incoming serial data
 		String command = PCSerial.readString();  // read command from serial port
 	
-	if (command == "p") { // Heartbeat signal
+	if (command == "b") { // Heartbeat signal
 			lastHeartbeatTime = millis();
 	} else if (command == "C") {  // turn on Camera
 			digitalWrite(2, LOW);
