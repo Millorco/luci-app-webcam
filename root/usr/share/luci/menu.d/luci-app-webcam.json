@@ -18,14 +18,6 @@
 			"path": "webcam/setting"
 		}
 	},
-	"admin/services/webcam/shooting": {
-		"title": "Shooting",
-		"order": 20,
-		"action": {
-			"type": "view",
-			"path": "webcam/shooting"
-		}
-	},
 	"admin/services/webcam/day_setting": {
 		"title": "Day Setting",
 		"order": 30,
