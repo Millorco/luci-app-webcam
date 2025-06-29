@@ -27,18 +27,23 @@ return view.extend({
 		o = s.option(form.ListValue, 'aperture_day', _('Aperture'),
 			_('A select option'));
 		o.placeholder = 'placeholder';
-		o.value('0', 'Implicit Auto');
-		o.value('1', 'Auto');
-		o.value('14', '2.8');
-		o.value('3', 'ISO 400');
-		o.value('4', 'ISO 800');
-		o.value('5', 'ISO 800');
-		o.value('6', 'ISO 800');
-		o.value('7', 'ISO 800');
-		o.value('8', 'ISO 800');
-		o.value('9', 'ISO 800');
-		o.value('10', 'ISO 800');
-		o.value('11', 'ISO 800');
+		o.value('0', '4.5');
+		o.value('1', '5');
+		o.value('2', '5.6');
+		o.value('3', '6.3');
+		o.value('4', '7.1');
+		o.value('5', '8');
+		o.value('6', '9');
+		o.value('7', '10');
+		o.value('8', '11');
+		o.value('9', '13');
+		o.value('10', '14');
+		o.value('11', '16');
+		o.value('12', '18');
+		o.value('13', '20');
+		o.value('14', '22');
+		o.value('15', '25');
+		o.value('16', '29');
 		o.rmempty = false;
 		o.editable = true;		
 
