@@ -36,8 +36,7 @@ return view.extend({
 		s = m.section(form.TypedSection, 'shooting', _('Common Shooting Settings'));
 		s.anonymous = true;
 		
-		o = s.option(form.ListValue, 'imageformat', _('Image Format'),
-			_('A select option'));
+		o = s.option(form.ListValue, 'imageformat', _('Image Format'));
 		o.placeholder = 'placeholder';
 		o.value('0', 'Large Fine JPEG');
 		o.value('1', 'Large Normal JPEG');
@@ -52,8 +51,7 @@ return view.extend({
 		o.rmempty = false;
 		o.editable = true;
 		
-		o = s.option(form.ListValue, 'whitebalance', _('Whitebalance'),
-			_('A select option'));
+		o = s.option(form.ListValue, 'whitebalance', _('Whitebalance'));
 		o.placeholder = 'placeholder';
 		o.value('0', 'Auto');
 		o.value('1', 'AWB White');
