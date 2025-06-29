@@ -10,14 +10,11 @@ return view.extend({
 		s = m.section(form.TypedSection, 'server', _('Upload Server Setting'));
 		s.anonymous = true;	
 
-		s.option(form.Value, 'upload_server', _('Server'),
-			_('Input for the first option'));					
+		s.option(form.Value, 'upload_server', _('Server'));					
 
-		s.option(form.Value, 'upload_directory', _('Directory'),
-			_('Input for the first option'));
+		s.option(form.Value, 'upload_directory', _('Directory'));
 
-		s.option(form.Value, 'upload_username', _('Username'),
-			_('Input for the first option'));
+		s.option(form.Value, 'upload_username', _('Username'));
 
 		o = s.option(form.Value, 'upload_password', _('Password'),
 			_('Input for a password (storage on disk is not encrypted)'));
