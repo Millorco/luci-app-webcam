@@ -10,8 +10,7 @@ return view.extend({
 		s = m.section(form.TypedSection, 'day', _('Day Shooting Settings'));
 		s.anonymous = true;		
 		
-		o = s.option(form.ListValue, 'iso_day', _('ISO'),
-			_('A select option'));
+		o = s.option(form.ListValue, 'iso_day', _('ISO'));
 		o.placeholder = 'placeholder';
 		o.value('0', 'Auto');
 		o.value('1', '100');
@@ -24,8 +23,7 @@ return view.extend({
 		o.rmempty = false;
 		o.editable = true;		
 		
-		o = s.option(form.ListValue, 'aperture_day', _('Aperture'),
-			_('A select option'));
+		o = s.option(form.ListValue, 'aperture_day', _('Aperture'));
 		o.placeholder = 'placeholder';
 		o.value('0', '4.5');
 		o.value('1', '5');
@@ -47,8 +45,7 @@ return view.extend({
 		o.rmempty = false;
 		o.editable = true;		
 
-		o = s.option(form.ListValue, 'shutterspeed_day', _('Shutterspeed'),
-			_('A select option'));
+		o = s.option(form.ListValue, 'shutterspeed_day', _('Shutterspeed'));
 		o.placeholder = 'placeholder';
 		o.value('0', 'bulb');
 		o.value('1', '30');
