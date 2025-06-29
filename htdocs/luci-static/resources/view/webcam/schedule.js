@@ -27,8 +27,8 @@ return view.extend({
 		return E([
 			E('h2', _('Schedule Shooting')),
 			E('p', { 'class': 'cbi-section-descr' }, _('This is the system crontab in which scheduled tasks can be defined.')),
-			E('p', {}, E('textarea', { 'style': 'width:100%', 'rows': 5, 'disabled': isReadonlyView }, [ crontab != null ? crontab : '' ]))
-			E('p', { 'class': 'cbi-section-descr' }, _('More info (<a href="https://en.wikipedia.org/wiki/Cron" target="_blank">Click here</a>)')),
+			E('p', {}, E('textarea', { 'style': 'width:100%', 'rows': 5, 'disabled': isReadonlyView }, [ crontab != null ? crontab : '' ])),
+			E('p', { 'class': 'cbi-section-descr' }, _('More info (<a href="https://en.wikipedia.org/wiki/Cron" target="_blank">Click here</a>)'))
 		]);
 	},
 
