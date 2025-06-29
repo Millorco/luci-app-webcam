@@ -1,1 +1,8 @@
+## Camera Schedule Shooting ##
 */10 * * * * /usr/bin/capture
+##
+##
+## Heartbeat PING ##
+*/10 * * * * /usr/bin/heartbeat
+##
+##
