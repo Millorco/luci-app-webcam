@@ -6,12 +6,6 @@
 # ---------------------------------------------------
 #
 
-
-
-wc_latitude="12"
-wc_longitude="14"
-
-
 . /usr/bin//webcam.cfg
 cd /tmp
 
@@ -38,7 +32,7 @@ echo "Orario Alba " $ALBA
 echo "Orario Tramonto " $TRAMONTO
 
 # Ottieni l'orario corrente in formato UTC (ora:minuti)
-CURRENT_TIME=$(date -u +%H:%M)
+CURRENT_TIME=$(date +%H:%M)
 
 echo "Ora Corrente " $CURRENT_TIME
 
