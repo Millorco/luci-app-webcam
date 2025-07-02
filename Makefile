@@ -4,7 +4,7 @@
 include $(TOPDIR)/rules.mk
 
 LUCI_TITLE:=LuCI Webcam app for gPhoto
-LUCI_DEPENDS:=+luci-base
+LUCI_DEPENDS:=+luci-base2
 LUCI_PKGARCH:=all
 
 PKG_LICENSE:=GPL-2.0
