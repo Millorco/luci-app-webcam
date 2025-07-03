@@ -63,9 +63,9 @@ void loop() {
 	} else if (command == "t") {  // turn off LED
 			digitalWrite(13, LOW);
 	} else if (command == "m") {  // turn off LED
-			Serial.print("Lettera M");
+			PCSerial.print("Lettera M");
 	} else if (command == "n") {  // turn off LED
-			Serial.print("Lettera N");
+			PCSerial.print("Lettera N");
 	} 
 }
 }
