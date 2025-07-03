@@ -1,7 +1,7 @@
 #include <Wire.h>
 #include <SoftwareSerial.h>
 
-SoftwareSerial PCSerial(10, 11); // RX, TX
+SoftwareSerial PCSerial(6, 7); // RX, TX
 
 const unsigned long HEARTBEAT_TIMEOUT = 600000; // 10 minuti in millisecondi
 unsigned long lastHeartbeatTime = 0;
@@ -62,6 +62,10 @@ void loop() {
 			digitalWrite(13, HIGH);
 	} else if (command == "t") {  // turn off LED
 			digitalWrite(13, LOW);
+	} else if (command == "m") {  // turn off LED
+			PCSerial.print("Lettera M");
+	} else if (command == "n") {  // turn off LED
+			Serial.print("Lettera N");
 	} 
 }
 }
