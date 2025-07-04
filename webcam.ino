@@ -30,8 +30,8 @@ void loop() {
 	}	
 	
 	// Read and execute commands from serial port
-	if (PCSerial.available()) {
-		String command = PCSerial.readString();
+	if (WebcamSerial.available()) {
+		String command = WebcamSerial.readString();
 	
 	if (command == "b") { // Heartbeat signal
 			lastHeartbeatTime = millis();
@@ -54,7 +54,35 @@ void loop() {
 	}  else if (command == "n") {  // Test Software Serial
 			WebcamSerial.print("Software Serial OK");
 	} 
-}
+	}
+
+	// Read and execute commands from serial port
+	if (Serial.available()) {
+		String command = Serial.readString();
+	
+	if (command == "b") { // Heartbeat signal
+			lastHeartbeatTime = millis();
+	} else if (command == "C") {  // turn on Camera
+			digitalWrite(2, LOW);
+	} else if (command == "c") {  // turn off Camera
+			digitalWrite(2, HIGH);
+	} else if (command == "H") {  // turn on Heating
+			digitalWrite(3, HIGH);
+	} else if (command == "h") {  // turn off Heating
+			digitalWrite(3, LOW);
+	} else if (command == "P") {  // turn on PC
+			digitalWrite(4, LOW);
+	} else if (command == "p") {  // turn off PC
+			digitalWrite(4, HIGH);
+	} else if (command == "F") {  // turn on Fun
+			digitalWrite(5, HIGH);
+	} else if (command == "f") {  // turn off Fun
+			digitalWrite(5, LOW);
+	}  else if (command == "n") {  // Test Software Serial
+			Serial.print("Serial OK");
+	} 
+	}
+
 }
 
 void resetFunc() {
