@@ -1,13 +1,4 @@
-Aggiungere sensore temperatura porta 
-
-Aggiungere se presente riscaldament
-
-agiungere se presente ventola
-
-Whatchdog?
-
-
-# Example app for js based Luci
+# App to controlla a reflex whith gPhoto2
 
 This app is meant to be a starting point for developing new LuCI apps using the modern JavaScript client-rendered approach.
 Previously the LuCI used a Lua server-side render approach which is deprecated now.
