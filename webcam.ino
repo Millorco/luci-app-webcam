@@ -26,7 +26,7 @@ void loop() {
 	// Controllo del timeout dell'heartbeat
 	// Se non riceve un segnale di Heartbeat da 10 minuti resettta in PC
 	if (millis() - lastHeartbeatTime > HEARTBEAT_TIMEOUT) {
-		resetFunc(); //funzione di reset del PC
+		resetFunc();
 	}	
 	
 	// Read and execute commands from serial port
