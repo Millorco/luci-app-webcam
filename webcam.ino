@@ -15,7 +15,7 @@ void setup() {
 	pinMode(2, OUTPUT); // sets pin 2 as output for Camera Power
 	pinMode(3, OUTPUT); // sets pin 3 as output for Heating
 	pinMode(4, OUTPUT); // sets pin 4 as output for PC
-	pinMode(5, OUTPUT); // sets pin 5 as output for Fun
+	pinMode(5, OUTPUT); // sets pin 5 as output for Fan
 	
 	delay(1000); // let serial console settle
 }
@@ -47,9 +47,9 @@ void loop() {
 			digitalWrite(4, LOW);
 	} else if (command == "p") {  // turn off PC
 			digitalWrite(4, HIGH);
-	} else if (command == "F") {  // turn on Fun
+	} else if (command == "F") {  // turn on Fan
 			digitalWrite(5, HIGH);
-	} else if (command == "f") {  // turn off Fun
+	} else if (command == "f") {  // turn off Fan
 			digitalWrite(5, LOW);
 	}  else if (command == "n") {  // Test Software Serial
 			WebcamSerial.print("Software Serial OK");
@@ -74,9 +74,9 @@ void loop() {
 			digitalWrite(4, LOW);
 	} else if (command == "p") {  // turn off PC
 			digitalWrite(4, HIGH);
-	} else if (command == "F") {  // turn on Fun
+	} else if (command == "F") {  // turn on Fan
 			digitalWrite(5, HIGH);
-	} else if (command == "f") {  // turn off Fun
+	} else if (command == "f") {  // turn off Fan
 			digitalWrite(5, LOW);
 	}  else if (command == "n") {  // Test Software Serial
 			Serial.print("Serial OK");
