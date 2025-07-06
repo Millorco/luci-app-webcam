@@ -3,6 +3,6 @@
 ##
 ##
 ## Heartbeat PING ##
-*/10 * * * * /usr/bin/heartbeat
+*/3 * * * * /usr/bin/heartbeat
 ##
 ##
