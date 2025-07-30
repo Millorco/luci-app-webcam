@@ -3,8 +3,8 @@
 #
 config general 'general'
         option maintenance_mode 'no'
-        option latitude '12'
-        option longitude '14'
+        option latitude '41.929308'
+        option longitude '12.464880'
         option photo_name 'raw'
         option temp_scale 'c'
         option heating '1'
