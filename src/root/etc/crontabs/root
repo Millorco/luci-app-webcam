@@ -3,6 +3,7 @@
 ##
 ##
 ## Heartbeat PING ##
+## Do not change this setting ##
 */3 * * * * /usr/bin/heartbeat
 ##
 ##
