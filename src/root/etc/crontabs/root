@@ -3,8 +3,8 @@
 ##
 ##
 ## Heartbeat PING ##
-## Do not change this setting ##
+## DO NOT CHANGE THIS SETTING ##
 */3 * * * * /usr/bin/heartbeat
-## Do not change this setting ##
+## DO NOT CHANGE THIS SETTING ##
 ##
 ##
