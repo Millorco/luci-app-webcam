@@ -5,12 +5,16 @@
 #
 # ---------------------------------------------------
 #
+
 . /usr/bin//webcam.cfg
+
 cd /tmp
 NOW=$(date +"%Y%m%d-%H%M")
 echo "Today is " $NOW
 FILENAME="webcam_$NOW.jpg"
 echo "Filename is  " $FILENAME
+
+
 #
 # Funzione check day night 1
 #
@@ -39,6 +43,8 @@ function start {
         capture_night
     fi
 }
+
+
 #
 # Funzione cattura per giorno
 #
@@ -68,6 +74,8 @@ function capture_day {
     webcam_heater reset
     upload
 }
+
+
 #
 # Funzione cattura per Notte  
 #
@@ -98,6 +106,8 @@ function capture_night {
     webcam_heater reset
     upload
 }
+
+
 #
 # Funzione Upload Foto
 #
@@ -109,6 +119,7 @@ function upload {
          --limit-rate 100k \
          --form upload=@raw.jpg --form now=$NOW $wc_curlpar/upload.php
 }
+
 
 # Avvia il processo principale
 start
