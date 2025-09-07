@@ -1,1 +1,113 @@
 
+#!/bin/sh
+# ---------------------------------------------------
+#
+# Capture image with EOS camera
+#
+# ---------------------------------------------------
+#
+. /usr/bin//webcam.cfg
+cd /tmp
+NOW=$(date +"%Y%m%d-%H%M")
+echo "Today is " $NOW
+FILENAME="webcam_$NOW.jpg"
+echo "Filename is  " $FILENAME
+#
+# Funzione check day night 1
+#
+function start {
+    # Chiamata all'API Sunrise-Sunset (in formato UTC)
+    API_URL="https://api.sunrise-sunset.org/json?lat=$wc_latitude&lng=$wc_longitude&formatted=0"
+    RESPONSE=$(curl -s "$API_URL")
+    
+    # Estrai l'orario di alba e tramonto dalla risposta JSON
+    ALBA=$(echo "$RESPONSE" | grep -o '"sunrise":"[^"]*' | cut -d '"' -f 4 | cut -d 'T' -f2 | cut -d 'Z' -f1)
+    TRAMONTO=$(echo "$RESPONSE" | grep -o '"sunset":"[^"]*' | cut -d '"' -f 4 | cut -d 'T' -f2 | cut -d 'Z' -f1)
+    
+    echo "Orario Alba UTC: " $ALBA
+    echo "Orario Tramonto UTC: " $TRAMONTO
+    
+    # Ottieni l'orario corrente in formato UTC (ora:minuti)
+    CURRENT_TIME=$(date -u +%H:%M)
+    echo "Ora Corrente UTC: " $CURRENT_TIME
+    
+    # Confronta orari: se l'ora corrente è tra alba e tramonto, è giorno, altrimenti è notte
+    if [[ "$CURRENT_TIME" > "$ALBA" ]] && [[ "$CURRENT_TIME" < "$TRAMONTO" ]]; then
+        echo "Cattura giorno"
+        capture_day
+    else
+        echo "Cattura Notte"  
+        capture_night
+    fi
+}
+#
+# Funzione cattura per giorno
+#
+function capture_day {
+    rm -f *.jpg 2>/dev/null
+    # Heizung aus, um genug Strom zu haben
+    webcam_heater tmpoff
+    echo "$wc_name $NOW: Capture image..."
+    
+    gphoto2 --set-config eosremoterelease=3 \
+    --set-config eosremoterelease=4 \
+    --set-config imagesize=0 \
+    --set-config imageformat=0 \
+    --set-config imagequality=0 \
+    --set-config whitebalance=0 \
+    --set-config iso=1 \
+    --set-config aperture=6 \
+    --set-config shutterspeed=15 \
+    --get-all-metadata \
+    --wait-event-and-download=4s \
+    --capture-image-and-download \
+    --force-overwrite \
+    --filename $FILENAME 2>&1 | grep -v Property
+    
+    # Heizung wieder auf vorherigen Stand
+    webcam_heater reset
+    upload
+}
+#
+# Funzione cattura per Notte  
+#
+function capture_night {
+    rm -f *.jpg 2>/dev/null
+    
+    # Heizung aus, um genug Strom zu haben
+    webcam_heater tmpoff
+    echo "$wc_name $NOW: Capture image..."
+    
+    gphoto2 --set-config eosremoterelease=3 \
+    --set-config eosremoterelease=4 \
+    --set-config imagesize=0 \
+    --set-config imageformat=0 \
+    --set-config imagequality=0 \
+    --set-config whitebalance=0 \
+    --set-config iso=6 \
+    --set-config aperture=2 \
+    --set-config shutterspeed=8 \
+    --get-all-metadata \
+    --wait-event-and-download=4s \
+    --capture-image-and-download \
+    --force-overwrite \
+    --filename $FILENAME 2>&1 | grep -v Property
+    
+    # Heizung wieder auf vorherigen Stand  
+    webcam_heater reset
+    upload
+}
+#
+# Funzione Upload Foto
+#
+function upload {
+    mv *.jpg raw.jpg || return 1
+    echo "$wc_name $NOW: Upload image..."
+    echo "state=upload" | curl -s --form log=@- $wc_curlpar/log.php
+    curl -sw '\n%{time_total}s %{size_upload}Bytes %{speed_upload}Bytes/s\n' \
+         --limit-rate 100k \
+         --form upload=@raw.jpg --form now=$NOW $wc_curlpar/upload.php
+}
+
+# Avvia il processo principale
+start
