@@ -1,4 +1,3 @@
-
 #!/bin/sh
 # ---------------------------------------------------
 #
@@ -47,19 +46,20 @@ function capture_day {
     rm -f *.jpg 2>/dev/null
     # Heizung aus, um genug Strom zu haben
     webcam_heater tmpoff
-    echo "$wc_name $NOW: Capture image..."
+    echo "$wc_name $NOW: Capture image (DAY mode)..."
+    echo "Day settings: ISO=$DAY_ISO, Aperture=$DAY_APERTURE, Shutter=$DAY_SHUTTERSPEED, WB=$DAY_WHITEBALANCE"
     
     gphoto2 --set-config eosremoterelease=3 \
     --set-config eosremoterelease=4 \
-    --set-config imagesize=0 \
-    --set-config imageformat=0 \
-    --set-config imagequality=0 \
-    --set-config whitebalance=0 \
-    --set-config iso=1 \
-    --set-config aperture=6 \
-    --set-config shutterspeed=15 \
+    --set-config imagesize=$DAY_IMAGE_SIZE \
+    --set-config imageformat=$DAY_IMAGE_FORMAT \
+    --set-config imagequality=$DAY_IMAGE_QUALITY \
+    --set-config whitebalance=$DAY_WHITEBALANCE \
+    --set-config iso=$DAY_ISO \
+    --set-config aperture=$DAY_APERTURE \
+    --set-config shutterspeed=$DAY_SHUTTERSPEED \
     --get-all-metadata \
-    --wait-event-and-download=4s \
+    --wait-event-and-download=$DAY_WAIT_EVENT \
     --capture-image-and-download \
     --force-overwrite \
     --filename $FILENAME 2>&1 | grep -v Property
@@ -76,19 +76,20 @@ function capture_night {
     
     # Heizung aus, um genug Strom zu haben
     webcam_heater tmpoff
-    echo "$wc_name $NOW: Capture image..."
+    echo "$wc_name $NOW: Capture image (NIGHT mode)..."
+    echo "Night settings: ISO=$NIGHT_ISO, Aperture=$NIGHT_APERTURE, Shutter=$NIGHT_SHUTTERSPEED, WB=$NIGHT_WHITEBALANCE"
     
     gphoto2 --set-config eosremoterelease=3 \
     --set-config eosremoterelease=4 \
-    --set-config imagesize=0 \
-    --set-config imageformat=0 \
-    --set-config imagequality=0 \
-    --set-config whitebalance=0 \
-    --set-config iso=6 \
-    --set-config aperture=2 \
-    --set-config shutterspeed=8 \
+    --set-config imagesize=$NIGHT_IMAGE_SIZE \
+    --set-config imageformat=$NIGHT_IMAGE_FORMAT \
+    --set-config imagequality=$NIGHT_IMAGE_QUALITY \
+    --set-config whitebalance=$NIGHT_WHITEBALANCE \
+    --set-config iso=$NIGHT_ISO \
+    --set-config aperture=$NIGHT_APERTURE \
+    --set-config shutterspeed=$NIGHT_SHUTTERSPEED \
     --get-all-metadata \
-    --wait-event-and-download=4s \
+    --wait-event-and-download=$NIGHT_WAIT_EVENT \
     --capture-image-and-download \
     --force-overwrite \
     --filename $FILENAME 2>&1 | grep -v Property
