@@ -111,11 +111,20 @@ function capture_night {
 #
 function upload {
     mv *.jpg raw.jpg || return 1
-    echo "$WC_NAME $NOW: Upload image..."
-    echo "state=upload" | curl -s --form log=@- $wc_curlpar/log.php
-    curl -sw '\n%{time_total}s %{size_upload}Bytes %{speed_upload}Bytes/s\n' \
-         --limit-rate 100k \
-         --form upload=@raw.jpg --form now=$NOW $wc_curlpar/upload.php
+
+# Costruisci l'URL di destinazione completo
+TARGET_URL="${WC_UPLOAD_SERVER}${WC_UPLOAD_DIRECTORY}"
+
+# -T: specifica il file da caricare
+curl -T "$FILE_TO_UPLOAD" -u "$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD" --ftp-create-dirs "$TARGET_URL"
+
+# Controlla il codice di ritorno di curl per verificare il successo
+if [ $? -eq 0 ]; then
+  echo "Caricamento completato con successo!"
+else
+  echo "Errore durante il caricamento del file."
+  exit 1
+fi
 }
 
 
