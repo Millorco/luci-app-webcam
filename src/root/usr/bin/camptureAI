@@ -113,13 +113,13 @@ function upload {
 
 	# Upload con sshpass + scp
 	# Nota: installa sshpass su OpenWrt con: opkg update && opkg install sshpass
-	sshpass -p "$WC_UPLOAD_PASSWORD" scp "$FILE_TO_UPLOAD" \
+	sshpass -p "$WC_UPLOAD_PASSWORD" scp "$FILENAME" \
    	 "$WC_UPLOAD_USERNAME@$WC_UPLOAD_SERVER:$WC_UPLOAD_DIRECTORY/"
 
 	if [ $? -eq 0 ]; then
-   	 echo "✅ Upload completato con successo"
+   	 echo "Upload completato con successo"
 	else
-   	 echo "❌ Upload fallito"
+   	 echo "Upload fallito"
 	fi
 
 	}
