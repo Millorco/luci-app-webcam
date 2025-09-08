@@ -46,6 +46,13 @@ function start {
 function capture_day {
     rm -f *.jpg 2>/dev/null
     # Heizung aus, um genug Strom zu haben
+	if [ $WC_HEATING -eq 1 ]; then
+    	. /usr/bin//serialsend h
+	fi
+
+# qui lo script continua normalmente
+echo "altri comandi..."
+
     . /usr/bin//serialsend h
     echo "$WC_NAME $NOW: Capture image (DAY mode)..."
     
@@ -61,7 +68,10 @@ function capture_day {
     --filename $FILENAME 2>&1 | grep -v Property
     
     # Heizung wieder auf vorherigen Stand
-    . /usr/bin//serialsend H
+	if [ $WC_HEATING -eq 1 ]; then
+    	. /usr/bin//serialsend H
+	fi
+
     upload
 }
 
