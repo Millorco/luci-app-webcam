@@ -142,8 +142,9 @@ fi
 	}
 
 
-	if [ $WC_HEATING -eq 1 ]; then
-    	. /usr/bin//serialsend h
+	if [ $WC_MAINTENANCE_MODE -eq 1 ]; then
+    echo "Maintenance Mode"
+    exit 1
 	fi
 
 # Avvia il processo principale
