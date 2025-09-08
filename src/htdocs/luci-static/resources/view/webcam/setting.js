@@ -11,8 +11,8 @@ return view.extend({
 		s.anonymous = true;
 
 		o = s.option(form.ListValue, 'maintenance_mode', _('Maintenance Mode'));
-		o.value('yes', 'Yes');
-		o.value('no', 'No');
+		o.value('1', 'Yes');
+		o.value('0', 'No');
 		o.rmempty = false;
 		
 		s.option(form.Value, 'photo_name', _('Photo File Name'));
