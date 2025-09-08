@@ -51,7 +51,7 @@ function capture_day {
 	fi
 
     echo "$WC_NAME $NOW: Capture image (DAY mode)..."
-    
+
     gphoto2 --set-config eosremoterelease=3 \
     --set-config eosremoterelease=4 \
     --set-config whitebalance=$WC_WHITEBALANCE \
@@ -62,29 +62,29 @@ function capture_day {
     --capture-image-and-download \
     --force-overwrite \
     --filename $FILENAME 2>&1 | grep -v Property
-    
+
     # Heizung wieder auf vorherigen Stand
 	if [ $WC_HEATING -eq 1 ]; then
     	. /usr/bin//serialsend H
 	fi
 
-    upload
+   upload
 }
 
 
 #
-# Funzione cattura per Notte  
+# Funzione cattura per Notte
 #
 function capture_night {
     rm -f *.jpg 2>/dev/null
-    
+
     # Heizung wieder auf vorherigen Stand
 	if [ $WC_HEATING -eq 1 ]; then
     	. /usr/bin//serialsend h
 	fi
 
     echo "$WC_NAME $NOW: Capture image (NIGHT mode)..."
-    
+
     gphoto2 --set-config eosremoterelease=3 \
     --set-config eosremoterelease=4 \
     --set-config whitebalance=$WC_WHITEBALANCE \
@@ -95,7 +95,7 @@ function capture_night {
     --capture-image-and-download \
     --force-overwrite \
     --filename $FILENAME 2>&1 | grep -v Property
-    
+
     # Heizung wieder auf vorherigen Stand
 	if [ $WC_HEATING -eq 1 ]; then
     	. /usr/bin//serialsend H
@@ -109,19 +109,36 @@ function capture_night {
 # Funzione Upload Foto
 #
 function upload {
-    mv *.jpg raw.jpg || return 1
 
-	# Upload con sshpass + scp
-	# Nota: installa sshpass su OpenWrt con: opkg update && opkg install sshpass
-	sshpass -p "$WC_UPLOAD_PASSWORD" scp "$FILENAME" \
-   	 "$WC_UPLOAD_USERNAME@$WC_UPLOAD_SERVER:$WC_UPLOAD_DIRECTORY/"
 
-	if [ $? -eq 0 ]; then
-   	 echo "Upload completato con successo"
-	else
-   	 echo "Upload fallito"
-	fi
+# Verifica che il file da caricare esista
+if [ ! -f "$FILENAME" ]; then
+    echo "Errore: Il file '$FILENAME' non esiste"
+    exit 1
+fi
 
+echo "Inizio upload del file '$FILENAME' su server FTP..."
+echo "Server: $WC_UPLOAD_SERVER"
+echo "Directory remota: $WC_UPLOAD_DIRECTORY"
+
+echo "curl -T "$FILENAME" --user "$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD" --ftp-create-dirs  "ftp://$WC_UPLOAD_SERVER/$WC_UPLOAD_DIRECTORY/$FILENAME""
+
+# Esegue l'upload usando curl (disponibile di default su OpenWrt)
+# Opzione 1: Upload semplice
+curl -T "$FILENAME" \
+     --user "$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD" \
+     --ftp-create-dirs \
+     "ftp://$WC_UPLOAD_SERVER/$WC_UPLOAD_DIRECTORY/$FILENAME"
+
+
+# Controlla il risultato dell'operazione
+if [ $? -eq 0 ]; then
+    echo "Upload completato con successo!"
+    exit 0
+else
+    echo "Errore durante l'upload del file"
+    exit 1
+fi
 	}
 
 
