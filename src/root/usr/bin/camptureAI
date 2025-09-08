@@ -46,7 +46,7 @@ function start {
 function capture_day {
     rm -f *.jpg 2>/dev/null
     # Heizung aus, um genug Strom zu haben
-    webcam_heater tmpoff
+    . /usr/bin//serialsend h
     echo "$WC_NAME $NOW: Capture image (DAY mode)..."
     
     gphoto2 --set-config eosremoterelease=3 \
@@ -61,7 +61,7 @@ function capture_day {
     --filename $FILENAME 2>&1 | grep -v Property
     
     # Heizung wieder auf vorherigen Stand
-    webcam_heater reset
+    . /usr/bin//serialsend H
     upload
 }
 
@@ -73,7 +73,7 @@ function capture_night {
     rm -f *.jpg 2>/dev/null
     
     # Heizung aus, um genug Strom zu haben
-    webcam_heater tmpoff
+    . /usr/bin//serialsend h
     echo "$WC_NAME $NOW: Capture image (NIGHT mode)..."
 
     
@@ -89,7 +89,7 @@ function capture_night {
     --filename $FILENAME 2>&1 | grep -v Property
     
     # Heizung wieder auf vorherigen Stand  
-    webcam_heater reset
+    . /usr/bin//serialsend H
     upload
 }
 
