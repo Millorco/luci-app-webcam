@@ -112,7 +112,7 @@ function upload {
     mv *.jpg raw.jpg || return 1
 
 # Costruisci l'URL di destinazione completo
-TARGET_URL="${WC_UPLOAD_SERVER}${WC_UPLOAD_DIRECTORY}"
+TARGET_URL="${WC_UPLOAD_SERVER}/${WC_UPLOAD_DIRECTORY}"
 
 # -T: specifica il file da caricare
 curl -T "$FILE_TO_UPLOAD" -u "$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD" --ftp-create-dirs "$TARGET_URL"
