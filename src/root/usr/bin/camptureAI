@@ -10,7 +10,7 @@
 
 cd /tmp
 NOW=$(date +"%Y%m%d-%H%M")
-FILENAME="webcam_$NOW.jpg"
+FILENAME="$WC_PHOTO_NAME_$NOW.jpg"
 
 
 
@@ -111,20 +111,18 @@ function capture_night {
 function upload {
     mv *.jpg raw.jpg || return 1
 
-# Costruisci l'URL di destinazione completo
-TARGET_URL="${WC_UPLOAD_SERVER}/${WC_UPLOAD_DIRECTORY}"
+	# Upload con sshpass + scp
+	# Nota: installa sshpass su OpenWrt con: opkg update && opkg install sshpass
+	sshpass -p "$WC_UPLOAD_PASSWORD" scp "$FILE_TO_UPLOAD" \
+   	 "$WC_UPLOAD_USERNAME@$WC_UPLOAD_SERVER:$WC_UPLOAD_DIRECTORY/"
 
-# -T: specifica il file da caricare
-curl -T "$FILE_TO_UPLOAD" -u "$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD" --ftp-create-dirs "$TARGET_URL"
+	if [ $? -eq 0 ]; then
+   	 echo "✅ Upload completato con successo"
+	else
+   	 echo "❌ Upload fallito"
+	fi
 
-# Controlla il codice di ritorno di curl per verificare il successo
-if [ $? -eq 0 ]; then
-  echo "Caricamento completato con successo!"
-else
-  echo "Errore durante il caricamento del file."
-  exit 1
-fi
-}
+	}
 
 
 # Avvia il processo principale
