@@ -142,5 +142,9 @@ fi
 	}
 
 
+	if [ $WC_HEATING -eq 1 ]; then
+    	. /usr/bin//serialsend h
+	fi
+
 # Avvia il processo principale
 start
