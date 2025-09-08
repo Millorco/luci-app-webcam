@@ -51,15 +51,11 @@ function capture_day {
     
     gphoto2 --set-config eosremoterelease=3 \
     --set-config eosremoterelease=4 \
-    --set-config imagesize=$DAY_IMAGE_SIZE \
-    --set-config imageformat=$WC_IMAGEFORMAT \
-    --set-config imagequality=$DAY_IMAGE_QUALITY \
     --set-config whitebalance=$WC_WHITEBALANCE \
     --set-config iso=$WC_ISO_DAY \
     --set-config aperture=$WC_APERTURE_DAY \
     --set-config shutterspeed=$WC_SHUTTERSPEED_DAY \
     --get-all-metadata \
-    --wait-event-and-download=$DAY_WAIT_EVENT \
     --capture-image-and-download \
     --force-overwrite \
     --filename $FILENAME 2>&1 | grep -v Property
@@ -83,15 +79,11 @@ function capture_night {
     
     gphoto2 --set-config eosremoterelease=3 \
     --set-config eosremoterelease=4 \
-    --set-config imagesize=$NIGHT_IMAGE_SIZE \
-    --set-config imageformat=$WC_IMAGEFORMAT \
-    --set-config imagequality=$NIGHT_IMAGE_QUALITY \
     --set-config whitebalance=$WC_WHITEBALANCE \
     --set-config iso=$WC_ISO_NIGHT \
     --set-config aperture=$WC_APERTURE_NIGHT \
     --set-config shutterspeed=$WC_SHUTTERSPEED_NIGHT \
     --get-all-metadata \
-    --wait-event-and-download=$NIGHT_WAIT_EVENT \
     --capture-image-and-download \
     --force-overwrite \
     --filename $FILENAME 2>&1 | grep -v Property
