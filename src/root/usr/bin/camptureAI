@@ -50,10 +50,6 @@ function capture_day {
     	. /usr/bin//serialsend h
 	fi
 
-# qui lo script continua normalmente
-echo "altri comandi..."
-
-    . /usr/bin//serialsend h
     echo "$WC_NAME $NOW: Capture image (DAY mode)..."
     
     gphoto2 --set-config eosremoterelease=3 \
@@ -82,10 +78,12 @@ echo "altri comandi..."
 function capture_night {
     rm -f *.jpg 2>/dev/null
     
-    # Heizung aus, um genug Strom zu haben
-    . /usr/bin//serialsend h
-    echo "$WC_NAME $NOW: Capture image (NIGHT mode)..."
+    # Heizung wieder auf vorherigen Stand
+	if [ $WC_HEATING -eq 1 ]; then
+    	. /usr/bin//serialsend h
+	fi
 
+    echo "$WC_NAME $NOW: Capture image (NIGHT mode)..."
     
     gphoto2 --set-config eosremoterelease=3 \
     --set-config eosremoterelease=4 \
@@ -98,8 +96,11 @@ function capture_night {
     --force-overwrite \
     --filename $FILENAME 2>&1 | grep -v Property
     
-    # Heizung wieder auf vorherigen Stand  
-    . /usr/bin//serialsend H
+    # Heizung wieder auf vorherigen Stand
+	if [ $WC_HEATING -eq 1 ]; then
+    	. /usr/bin//serialsend H
+	fi
+
     upload
 }
 
