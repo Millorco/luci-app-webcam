@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Script per installare luci-app-webcam su OpenWrt (senza git)
+# Script per installare luci-app-webcam su OpenWrt
 # Repository: https://github.com/Millorco/luci-app-webcam.git
 
 echo "=== Installazione luci-app-webcam ==="
