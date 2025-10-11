@@ -49,7 +49,7 @@ return view.extend({
 		o.placeholder = 'placeholder';
 		o.value('0', 'bulb');
 		o.value('1', '30');
-		o.value('14', '25');
+		o.value('2', '25');
 		o.value('3', '20');
 		o.value('4', '15');
 		o.value('5', '13');
