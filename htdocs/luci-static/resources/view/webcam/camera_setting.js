@@ -7,14 +7,11 @@ return view.extend({
 		let m, s, o;
 		m = new form.Map('webcam', _(''));
 
-		s = m.section(form.TypedSection, 'camera', _('Camera Setting'));
-		s.anonymous = true;
-		
-		s.option(form.Value, 'photo_name', _('Photo File Name'));
-
 		s = m.section(form.TypedSection, 'shooting', _('Common Shooting Settings'));
 		s.anonymous = true;
-		
+
+		s.option(form.Value, 'photo_name', _('Photo File Name'));
+
 		o = s.option(form.ListValue, 'imageformat', _('Image Format'));
 		o.placeholder = 'placeholder';
 		o.value('0', 'Large Fine JPEG');
