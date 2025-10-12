@@ -4,7 +4,7 @@
 
 SIGNAL=$1 # Esempio: un byte ACK. Sostituisci con il tuo segnale desiderato
 
-stty -F "$WC_SERIAL_PORT" "$BAUD_RATES" cs8 -parenb -cstopb 2>/dev/null
+stty -F "$WC_SERIAL_PORT" "$WC_BAUD_RATES" cs8 -parenb -cstopb 2>/dev/null
 
 if [ $? -ne 0 ]; then
 	echo "Errore: Impossibile configurare la porta seriale $WC_SERIAL_PORT" >&2
