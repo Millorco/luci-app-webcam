@@ -1,130 +1,133 @@
 #!/bin/sh
 
-# Script per installare luci-app-webcam su OpenWrt
-# Repository: https://github.com/Millorco/luci-app-webcam.git
+# Script corretto per installare luci-app-webcam su OpenWrt
+# htdocs → /www/
+# root → /
 
-echo "=== Installazione luci-app-webcam (ultima release) ==="
-echo ""
+set -e
 
-# Verifica che wget o curl siano disponibili
-if ! command -v wget &> /dev/null && ! command -v curl &> /dev/null; then
-    echo "ERRORE: wget o curl non disponibili"
-    exit 1
-fi
-
-# Verifica che tar sia disponibile
-if ! command -v tar &> /dev/null; then
-    echo "ERRORE: tar non disponibile"
-    exit 1
-fi
+# Colori per output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
 # Directory temporanea
-TMP_DIR="/tmp/luci-app-webcam"
-TAR_FILE="/tmp/webcam.tar.gz"
-INSTALL_DIR="/usr/lib/lua/luci"
+TEMP_DIR="/tmp/luci-app-webcam-install"
 
-# Recupera l'URL dell'ultima release tramite GitHub API
-echo "Rilevamento ultima release..."
-LATEST_URL=$(curl -s https://api.github.com/repos/Millorco/luci-app-webcam/releases/latest | \
-    grep "tarball_url" | head -n 1 | cut -d '"' -f 4)
+echo -e "${GREEN}Inizio installazione di luci-app-webcam...${NC}"
 
-if [ -z "$LATEST_URL" ]; then
-    echo "ERRORE: impossibile trovare l'ultima release."
+# Verifica se siamo su OpenWrt
+if [ ! -f "/etc/openwrt_release" ]; then
+    echo -e "${RED}Errore: Questo script deve essere eseguito su OpenWrt${NC}"
     exit 1
 fi
 
-echo "Ultima release: $LATEST_URL"
+# Verifica se wget è installato
+if ! command -v wget >/dev/null 2>&1; then
+    echo -e "${RED}Errore: wget non è installato${NC}"
+    echo "Installalo con: opkg update && opkg install wget"
+    exit 1
+fi
 
-echo "Download repository (tar.gz) dalla release..."
-rm -rf "$TMP_DIR" "$TAR_FILE"
+# Crea directory temporanea
+mkdir -p "$TEMP_DIR"
+cd "$TEMP_DIR"
 
-if command -v wget &> /dev/null; then
-    wget -O "$TAR_FILE" "$LATEST_URL"
+# Scarica l'archivio del repository
+LATEST_URL="https://github.com/Millorco/luci-app-webcam/archive/refs/heads/main.tar.gz"
+echo "Scarico l'ultima versione da $LATEST_URL"
+
+if wget -q "$LATEST_URL" -O webcam.tar.gz; then
+    echo -e "${GREEN}Download completato${NC}"
+    tar -xzf webcam.tar.gz
+    cd luci-app-webcam-main
 else
-    curl -L -o "$TAR_FILE" "$LATEST_URL"
-fi
-
-if [ $? -ne 0 ]; then
-    echo "ERRORE: Impossibile scaricare il repository"
+    echo -e "${RED}Errore nel download${NC}"
+    rm -rf "$TEMP_DIR"
     exit 1
 fi
 
-echo "Estrazione archivio..."
-mkdir -p "$TMP_DIR"
-tar -xzf "$TAR_FILE" -C "$TMP_DIR"
+echo -e "${GREEN}Copia dei file nelle directory corrette...${NC}"
 
-if [ $? -ne 0 ]; then
-    echo "ERRORE: Impossibile estrarre l'archivio"
-    rm -f "$TAR_FILE"
-    exit 1
+# 1. File web - htdocs → /www/
+if [ -d "htdocs" ]; then
+    echo "Copio file web (htdocs → /www/)..."
+    cp -r htdocs/* /www/ 2>/dev/null || {
+        echo -e "${YELLOW}Nota: Alcuni file web potrebbero già esistere${NC}"
+    }
 fi
 
-# Trova la directory estratta (di solito Millorco-luci-app-webcam-*)
-EXTRACTED_DIR=$(find "$TMP_DIR" -maxdepth 1 -type d -name "*luci-app-webcam*" | head -n 1)
-
-if [ -z "$EXTRACTED_DIR" ]; then
-    echo "ERRORE: Directory estratta non trovata"
-    rm -rf "$TMP_DIR" "$TAR_FILE"
-    exit 1
+# 2. File di sistema - root → /
+if [ -d "root" ]; then
+    echo "Copio file di sistema (root → /)..."
+    
+    # Copia ricorsivamente mantenendo la struttura delle directory
+    find root -type f | while read file; do
+        # Rimuove il prefisso "root/" dal percorso
+        dest_path="${file#root/}"
+        dest_dir=$(dirname "/$dest_path")
+        
+        # Crea la directory di destinazione se non esiste
+        mkdir -p "$dest_dir"
+        
+        # Copia il file
+        cp "$file" "/$dest_path" 2>/dev/null && \
+            echo "  Copiato: $file → /$dest_path" || \
+            echo -e "${YELLOW}  Attenzione: Impossibile copiare $file${NC}"
+    done
 fi
 
-echo "Installazione file..."
-
-# Copia i file dell'applicazione LuCI
-if [ -d "$EXTRACTED_DIR/luasrc" ]; then
-    cp -r "$EXTRACTED_DIR/luasrc/"* "$INSTALL_DIR/" 2>/dev/null
-    echo "- File Lua copiati"
-fi
-
-# Copia i file htdocs se presenti
-if [ -d "$EXTRACTED_DIR/htdocs" ]; then
-    mkdir -p /www
-    cp -r "$EXTRACTED_DIR/htdocs/"* /www/ 2>/dev/null
-    echo "- File htdocs copiati"
-fi
-
-# Copia i file root se presenti
-if [ -d "$EXTRACTED_DIR/root" ]; then
-    cp -r "$EXTRACTED_DIR/root/"* / 2>/dev/null
-    echo "- File root copiati"
-
-    # Rendi eseguibili solo i file copiati da root/usr/bin/
-    if [ -d "$EXTRACTED_DIR/root/usr/bin" ]; then
-        for file in "$EXTRACTED_DIR/root/usr/bin/"*; do
-            if [ -f "$file" ]; then
-                filename=$(basename "$file")
-                chmod +x "/usr/bin/$filename" 2>/dev/null
-                echo "- /usr/bin/$filename reso eseguibile"
-            fi
-        done
+# 3. File LuCI - luasrc → /usr/lib/lua/luci/
+if [ -d "luasrc" ]; then
+    echo "Copio file LuCI (luasrc → /usr/lib/lua/luci/)..."
+    
+    if [ -d "luasrc/controller" ]; then
+        mkdir -p /usr/lib/lua/luci/controller
+        cp -r luasrc/controller/* /usr/lib/lua/luci/controller/ 2>/dev/null || true
+    fi
+    
+    if [ -d "luasrc/model" ]; then
+        mkdir -p /usr/lib/lua/luci/model
+        cp -r luasrc/model/* /usr/lib/lua/luci/model/ 2>/dev/null || true
+    fi
+    
+    if [ -d "luasrc/view" ]; then
+        mkdir -p /usr/lib/lua/luci/view
+        cp -r luasrc/view/* /usr/lib/lua/luci/view/ 2>/dev/null || true
     fi
 fi
 
-# Copia i file po (traduzioni) se presenti
-if [ -d "$EXTRACTED_DIR/po" ]; then
-    mkdir -p /usr/lib/lua/luci/i18n
-    if command -v po2lmo &> /dev/null; then
-        for po_file in "$EXTRACTED_DIR/po"/*.po; do
-            if [ -f "$po_file" ]; then
-                lang=$(basename "$po_file" .po)
-                po2lmo "$po_file" "/usr/lib/lua/luci/i18n/webcam.$lang.lmo" 2>/dev/null
-                echo "- Traduzione $lang installata"
-            fi
-        done
-    else
-        echo "- po2lmo non disponibile, traduzioni saltate"
-    fi
+# Rende eseguibili gli script nella directory /etc/init.d/
+if [ -d "/etc/init.d" ]; then
+    echo "Rendo eseguibili gli script di init..."
+    find /etc/init.d/ -name "*webcam*" -type f | while read script; do
+        chmod +x "$script" 2>/dev/null && \
+            echo "  Render eseguibile: $script" || \
+            echo -e "${YELLOW}  Impossibile rendere eseguibile: $script${NC}"
+    done
 fi
 
-# Pulizia
-echo "Pulizia file temporanei..."
-rm -rf "$TMP_DIR" "$TAR_FILE"
+# Pulisce la cache LuCI
+echo "Pulisco la cache LuCI..."
+rm -rf /tmp/luci-indexcache
+rm -rf /tmp/luci-modulecache
 
-# Riavvio servizi LuCI
-echo "Riavvio servizi LuCI..."
-/etc/init.d/uhttpd restart
+echo -e "${GREEN}Installazione completata!${NC}"
+echo ""
+echo -e "${YELLOW}Riepilogo copia file:${NC}"
+echo "✓ htdocs/ → /www/"
+echo "✓ root/ → /"
+echo "✓ luasrc/ → /usr/lib/lua/luci/"
 
 echo ""
-echo "=== Installazione completata ==="
-echo "Accedi all'interfaccia LuCI per utilizzare l'applicazione"
-echo "Potrebbe essere necessario svuotare la cache del browser"
+echo -e "${YELLOW}Prossimi passi:${NC}"
+echo "1. Riavvia LuCI: /etc/init.d/uhttpd restart"
+echo "2. Accedi all'interfaccia web di OpenWrt"
+echo "3. Verifica la presenza dell'app webcam"
+echo "4. Se necessario, riavvia i servizi: /etc/init.d/webcam restart"
+
+# Pulizia
+rm -rf "$TEMP_DIR"
+
+echo -e "${GREEN}Pulizia file temporanei completata${NC}"
