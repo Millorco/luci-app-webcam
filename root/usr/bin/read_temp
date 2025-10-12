@@ -9,15 +9,15 @@
 
   # Svuota eventuali dati residui
   cat < "$WC_SERIAL_PORT" & CAT_PID=$!
-  sleep 0.5
+  sleep 1
   kill $CAT_PID
   wait $CAT_PID 2>/dev/null
 
   # Invia il comando per leggere la temperatura
-  echo -n "t" > "$WC_SERIAL_PORT"
+  echo -n "d" > "$WC_SERIAL_PORT"
 
   # Leggi la risposta (timeout 2 secondi)
-  TEMP=$(timeout 2 cat < "$WC_SERIAL_PORT" | tr -d '\r\n' | head -n 1)
+TEMP=$(dd if="$WC_SERIAL_PORT" bs=1 count=16 iflag=fullblock,nonblock 2>/dev/null | tr -d '\r\n' | head -n 1)
 
   echo "Temperatura SHT31: $TEMP °C"
 } || {
