@@ -1,0 +1,21 @@
+{
+  "luci-app-webcam": {
+    "description": "Grant UCI and RPC access to LuCI app Webcam",
+    "read": {
+      "ubus": {
+        "luci.webcam": [
+          "get_sample1",
+          "get_sample2"
+        ]
+      },
+      "uci": [
+        "webcam"
+      ]
+    },
+    "write": {
+      "uci": [
+        "webcam"
+      ]
+    }
+  }
+}
