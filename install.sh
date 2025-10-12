@@ -48,6 +48,25 @@ else
     exit 1
 fi
 
+# Verifica se il file /etc/config/webcam esiste e chiedi conferma
+if [ -f "/etc/config/webcam" ]; then
+    echo -e "${YELLOW}Attenzione: Il file /etc/config/webcam esiste già${NC}"
+    printf "Vuoi sovrascriverlo? (s/N): "
+    read -r response
+    case "$response" in
+        [sS]|[sS][iI]|[yY]|[yY][eE][sS])
+            echo "Sovrascrivo il file di configurazione..."
+            OVERWRITE_CONFIG=1
+            ;;
+        *)
+            echo "Mantengo il file di configurazione esistente"
+            OVERWRITE_CONFIG=0
+            ;;
+    esac
+else
+    OVERWRITE_CONFIG=1
+fi
+
 echo -e "${GREEN}Copia dei file nelle directory corrette...${NC}"
 
 # 1. File web - htdocs → /www/
@@ -68,13 +87,28 @@ if [ -d "root" ]; then
         dest_path="${file#root/}"
         dest_dir=$(dirname "/$dest_path")
         
+        # Se è il file di configurazione webcam e l'utente non vuole sovrascrivere, salta
+        if [ "$dest_path" = "etc/config/webcam" ] && [ "$OVERWRITE_CONFIG" -eq 0 ]; then
+            echo "  Salto: /$dest_path (configurazione esistente mantenuta)"
+            continue
+        fi
+        
         # Crea la directory di destinazione se non esiste
         mkdir -p "$dest_dir"
         
         # Copia il file
-        cp "$file" "/$dest_path" 2>/dev/null && \
-            echo "  Copiato: $file → /$dest_path" || \
+        if cp "$file" "/$dest_path" 2>/dev/null; then
+            echo "  Copiato: $file → /$dest_path"
+            
+            # Se il file è in /usr/bin/, rendilo eseguibile
+            if echo "/$dest_path" | grep -q "^/usr/bin/"; then
+                chmod +x "/$dest_path" 2>/dev/null && \
+                    echo "    Render eseguibile: /$dest_path" || \
+                    echo -e "${YELLOW}    Impossibile rendere eseguibile: /$dest_path${NC}"
+            fi
+        else
             echo -e "${YELLOW}  Attenzione: Impossibile copiare $file${NC}"
+        fi
     done
 fi
 
@@ -98,15 +132,8 @@ if [ -d "luasrc" ]; then
     fi
 fi
 
-# Rende eseguibili gli script nella directory /etc/init.d/
-if [ -d "/etc/init.d" ]; then
-    echo "Rendo eseguibili gli script di init..."
-    find /etc/init.d/ -name "*webcam*" -type f | while read script; do
-        chmod +x "$script" 2>/dev/null && \
-            echo "  Render eseguibile: $script" || \
-            echo -e "${YELLOW}  Impossibile rendere eseguibile: $script${NC}"
-    done
-fi
+
+
 
 # Pulisce la cache LuCI
 echo "Pulisco la cache LuCI..."
@@ -119,6 +146,7 @@ echo -e "${YELLOW}Riepilogo copia file:${NC}"
 echo "✓ htdocs/ → /www/"
 echo "✓ root/ → /"
 echo "✓ luasrc/ → /usr/lib/lua/luci/"
+echo "✓ File in /usr/bin/ resi eseguibili"
 
 echo ""
 echo -e "${YELLOW}Prossimi passi:${NC}"
