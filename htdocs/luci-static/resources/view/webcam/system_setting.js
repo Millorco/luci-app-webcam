@@ -29,10 +29,10 @@ return view.extend({
 		o.default = o.enabled;
 		o.rmempty = false;
 				
-		s = m.section(form.TypedSection, 'serial, _('Serial Port Setting'));
+		s = m.section(form.TypedSection, 'serial', _('Serial Port Setting'));
 		s.anonymous = true;
 
-		s.option(form.Value, 'serial_port', _('Serial Port Used'),
+		s.option(form.Value, 'serial_port', _('Serial Port Used')),
 		
 		o = s.option(form.ListValue, 'baud_rates', _('Baud Rates'));
 		o.placeholder = 'placeholder';
