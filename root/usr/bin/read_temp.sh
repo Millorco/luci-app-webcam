@@ -2,10 +2,6 @@
 
 . /usr/bin/webcam.cfg
 
-# Dispositivo seriale (modifica se necessario)
-SERIAL_DEV="/dev/ttyUSB0"
-BAUD=9600
-
 # Invia il comando 't' per richiedere la temperatura e legge la risposta
 {
   # Imposta i parametri seriali
