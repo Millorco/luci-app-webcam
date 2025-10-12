@@ -35,7 +35,6 @@ return view.extend({
 		s.option(form.Value, 'serial_port', _('Serial Port Used'),
 		
 		o = s.option(form.ListValue, 'baud_rates', _('Baud Rates'));
-		o.placeholder = 'placeholder';
 		o.value('9600');
 		o.value('19200');
 		o.value('38400');
