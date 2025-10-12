@@ -4,146 +4,127 @@
 # Capture image with EOS camera
 #
 # ---------------------------------------------------
-#
 
-. /usr/bin//webcam.cfg
+. /usr/bin/webcam.cfg
 
 cd /tmp
-NOW=$(date +"%Y%m%d-%H%M")
-FILENAME="$WC_PHOTO_NAME_$NOW.jpg"
+NOW_DATE="$(date +"%Y%m%d-%H%M")"
+FILENAME="${WC_PHOTO_NAME}_${NOW_DATE}.jpg"
 
+# Funzione per avviare la cattura in base a giorno/notte
+start() {
+    # Recupera orari alba/tramonto da API sunrise-sunset.org (UTC)
+    DATA="$(wget -qO- "https://api.sunrise-sunset.org/json?lat=$WC_LATITUDE&lng=$WC_LONGITUDE&formatted=0")"
 
+    # Estrai orari alba e tramonto (in UTC)
+    RISE="$(echo "$DATA" | jq -r '.results.sunrise')"
+    SET="$(echo "$DATA" | jq -r '.results.sunset')"
 
-#
-# Funzione check day night 1
-#
-function start {
-	# Recupera orari alba/tramonto da API sunrise-sunset.org (UTC)
-	DATA=$(wget -qO- "https://api.sunrise-sunset.org/json?lat=$WC_LATITUDE&lng=$WC_LONGITUDE&formatted=0")
+    # Ora attuale in UTC
+    NOW_UTC="$(date -u +"%Y-%m-%dT%H:%M:%S")"
 
-	# Estrai orari alba e tramonto (in UTC)
-	RISE=$(echo $DATA | jq -r '.results.sunrise')
-	SET=$(echo $DATA | jq -r '.results.sunset')
-
-	# Ora attuale in UTC
-	NOW=$(date -u +"%Y-%m-%dT%H:%M:%S")
-
-	# Confronto
-	if [ "$NOW" \> "$RISE" ] && [ "$NOW" \< "$SET" ]; then
-		echo "giorno"
-		capture_day
-	else
-		echo "notte"
-		capture_night
-	fi
-
+    # Confronto (ISO8601, confronto lessicografico)
+    if [ "$NOW_UTC" \> "$RISE" ] && [ "$NOW_UTC" \< "$SET" ]; then
+        echo "giorno"
+        capture_day
+    else
+        echo "notte"
+        capture_night
+    fi
 }
 
-
-#
 # Funzione cattura per giorno
-#
-function capture_day {
-    rm -f *.jpg 2>/dev/null
+capture_day() {
+    rm -f ./*.jpg 2>/dev/null
+
     # Heizung aus, um genug Strom zu haben
-	if [ $WC_HEATING -eq 1 ]; then
-    	. /usr/bin//serialsend h
-	fi
+    if [ "${WC_HEATING:-0}" -eq 1 ]; then
+        . /usr/bin/serialsend h
+    fi
 
-    echo "$WC_NAME $NOW: Capture image (DAY mode)..."
-
-    gphoto2 --set-config eosremoterelease=3 \
-    --set-config eosremoterelease=4 \
-    --set-config whitebalance=$WC_WHITEBALANCE \
-    --set-config iso=$WC_ISO_DAY \
-    --set-config aperture=$WC_APERTURE_DAY \
-    --set-config shutterspeed=$WC_SHUTTERSPEED_DAY \
-    --get-all-metadata \
-    --capture-image-and-download \
-    --force-overwrite \
-    --filename $FILENAME 2>&1 | grep -v Property
-
-    # Heizung wieder auf vorherigen Stand
-	if [ $WC_HEATING -eq 1 ]; then
-    	. /usr/bin//serialsend H
-	fi
-
-   upload
-}
-
-
-#
-# Funzione cattura per Notte
-#
-function capture_night {
-    rm -f *.jpg 2>/dev/null
-
-    # Heizung wieder auf vorherigen Stand
-	if [ $WC_HEATING -eq 1 ]; then
-    	. /usr/bin//serialsend h
-	fi
-
-    echo "$WC_NAME $NOW: Capture image (NIGHT mode)..."
+    echo "$WC_NAME $NOW_DATE: Capture image (DAY mode)..."
 
     gphoto2 --set-config eosremoterelease=3 \
-    --set-config eosremoterelease=4 \
-    --set-config whitebalance=$WC_WHITEBALANCE \
-    --set-config iso=$WC_ISO_NIGHT \
-    --set-config aperture=$WC_APERTURE_NIGHT \
-    --set-config shutterspeed=$WC_SHUTTERSPEED_NIGHT \
-    --get-all-metadata \
-    --capture-image-and-download \
-    --force-overwrite \
-    --filename $FILENAME 2>&1 | grep -v Property
+        --set-config eosremoterelease=4 \
+        --set-config whitebalance="$WC_WHITEBALANCE" \
+        --set-config iso="$WC_ISO_DAY" \
+        --set-config aperture="$WC_APERTURE_DAY" \
+        --set-config shutterspeed="$WC_SHUTTERSPEED_DAY" \
+        --get-all-metadata \
+        --capture-image-and-download \
+        --force-overwrite \
+        --filename "$FILENAME" 2>&1 | grep -v Property
 
     # Heizung wieder auf vorherigen Stand
-	if [ $WC_HEATING -eq 1 ]; then
-    	. /usr/bin//serialsend H
-	fi
+    if [ "${WC_HEATING:-0}" -eq 1 ]; then
+        . /usr/bin/serialsend H
+    fi
 
     upload
 }
 
+# Funzione cattura per notte
+capture_night() {
+    rm -f ./*.jpg 2>/dev/null
 
-#
+    # Heizung wieder auf vorherigen Stand
+    if [ "${WC_HEATING:-0}" -eq 1 ]; then
+        . /usr/bin/serialsend h
+    fi
+
+    echo "$WC_NAME $NOW_DATE: Capture image (NIGHT mode)..."
+
+    gphoto2 --set-config eosremoterelease=3 \
+        --set-config eosremoterelease=4 \
+        --set-config whitebalance="$WC_WHITEBALANCE" \
+        --set-config iso="$WC_ISO_NIGHT" \
+        --set-config aperture="$WC_APERTURE_NIGHT" \
+        --set-config shutterspeed="$WC_SHUTTERSPEED_NIGHT" \
+        --get-all-metadata \
+        --capture-image-and-download \
+        --force-overwrite \
+        --filename "$FILENAME" 2>&1 | grep -v Property
+
+    # Heizung wieder auf vorherigen Stand
+    if [ "${WC_HEATING:-0}" -eq 1 ]; then
+        . /usr/bin/serialsend H
+    fi
+
+    upload
+}
+
 # Funzione Upload Foto
-#
-function upload {
+upload() {
+    # Verifica che il file da caricare esista
+    if [ ! -f "$FILENAME" ]; then
+        echo "Errore: Il file '$FILENAME' non esiste"
+        exit 1
+    fi
 
+    echo "Inizio upload del file '$FILENAME' su server FTP..."
+    echo "Server: $WC_UPLOAD_SERVER"
+    echo "Directory remota: $WC_UPLOAD_DIRECTORY"
 
-# Verifica che il file da caricare esista
-if [ ! -f "$FILENAME" ]; then
-    echo "Errore: Il file '$FILENAME' non esiste"
-    exit 1
-fi
+    echo "curl -T \"$FILENAME\" --user \"$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD\" --ftp-create-dirs \"ftp://$WC_UPLOAD_SERVER/$WC_UPLOAD_DIRECTORY/$FILENAME\""
 
-echo "Inizio upload del file '$FILENAME' su server FTP..."
-echo "Server: $WC_UPLOAD_SERVER"
-echo "Directory remota: $WC_UPLOAD_DIRECTORY"
+    # Esegue l'upload usando curl (disponibile di default su OpenWrt)
+    curl -T "$FILENAME" \
+        --user "$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD" \
+        --ftp-create-dirs \
+        "ftp://$WC_UPLOAD_SERVER/$WC_UPLOAD_DIRECTORY/$FILENAME"
 
-echo "curl -T "$FILENAME" --user "$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD" --ftp-create-dirs  "ftp://$WC_UPLOAD_SERVER/$WC_UPLOAD_DIRECTORY/$FILENAME""
-
-# Esegue l'upload usando curl (disponibile di default su OpenWrt)
-# Opzione 1: Upload semplice
-curl -T "$FILENAME" \
-     --user "$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD" \
-     --ftp-create-dirs \
-     "ftp://$WC_UPLOAD_SERVER/$WC_UPLOAD_DIRECTORY/$FILENAME"
-
-
-# Controlla il risultato dell'operazione
-if [ $? -eq 0 ]; then
-    echo "Upload completato con successo!"
-    exit 0
-else
-    echo "Errore durante l'upload del file"
-    exit 1
-fi
-	}
-
+    # Controlla il risultato dell'operazione
+    if [ $? -eq 0 ]; then
+        echo "Upload completato con successo!"
+        exit 0
+    else
+        echo "Errore durante l'upload del file"
+        exit 1
+    fi
+}
 
 # Check Maintenance Mode
-if [ "$WC_MAINTENANCE_MODE" -eq 0 ]; then
+if [ "${WC_MAINTENANCE_MODE:-0}" -eq 0 ]; then
     echo "Normal mode - Starting service"
     start
 else
