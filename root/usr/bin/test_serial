@@ -1,0 +1,26 @@
+#!/bin/sh
+
+. /usr/bin/webcam.cfg
+
+# Invia il comando 'd' per testare la connessione e legge la risposta
+{
+  # Imposta i parametri seriali
+  stty -F "$WC_SERIAL_PORT" $WC_BAUD_RATES cs8 -cstopb -parenb -ixon -ixoff -crtscts raw
+
+  # Svuota eventuali dati residui
+  cat < "$WC_SERIAL_PORT" & CAT_PID=$!
+  sleep 1
+  kill $CAT_PID
+  wait $CAT_PID 2>/dev/null
+
+  # Invia il comando per testare la connessione
+  echo -n "d" > "$WC_SERIAL_PORT"
+
+  # Leggi la risposta (timeout 2 secondi)
+TEST=$(dd if="$WC_SERIAL_PORT" bs=1 count=64 iflag=fullblock,nonblock 2>/dev/null | tr -d '\r\n' | head -n 1)
+
+  echo "$TEST"
+} || {
+  echo "Errore nella comunicazione seriale"
+  exit 1
+}
