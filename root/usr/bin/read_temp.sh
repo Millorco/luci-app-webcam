@@ -2,10 +2,6 @@
 
 . /usr/bin/webcam.cfg
 
-HEARTBEAT_SIGNAL='b' # Esempio: un byte ACK. Sostituisci con il tuo segnale desiderato
-
-
-
 # Dispositivo seriale (modifica se necessario)
 SERIAL_DEV="/dev/ttyUSB0"
 BAUD=9600
