@@ -17,7 +17,7 @@
   echo -n "t" > "$WC_SERIAL_PORT"
 
   # Leggi la risposta (timeout 2 secondi)
-TEMP=$(dd if="$WC_SERIAL_PORT" bs=1 count=16 iflag=fullblock,nonblock 2>/dev/null | tr -d '\r\n' | head -n 1)
+  TEMP=$(dd if="$WC_SERIAL_PORT" bs=1 count=16 iflag=fullblock,nonblock 2>/dev/null | tr -d '\r\n' | head -n 1)
 
   echo "Temperatura SHT31: $TEMP °C"
 } || {
