@@ -23,6 +23,8 @@ stty
 ```sh
 opkg update
 opkg install coreutils-stty
+opkg install gphoto2 libgphoto2-drivers-iclick
+opkg libgphoto2-drivers-canon
 ```
 
 
