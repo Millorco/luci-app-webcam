@@ -1,5 +1,11 @@
 #!/bin/sh
 
+. /usr/bin/webcam.cfg
+
+HEARTBEAT_SIGNAL='b' # Esempio: un byte ACK. Sostituisci con il tuo segnale desiderato
+
+
+
 # Dispositivo seriale (modifica se necessario)
 SERIAL_DEV="/dev/ttyUSB0"
 BAUD=9600
@@ -7,19 +13,19 @@ BAUD=9600
 # Invia il comando 't' per richiedere la temperatura e legge la risposta
 {
   # Imposta i parametri seriali
-  stty -F "$SERIAL_DEV" $BAUD cs8 -cstopb -parenb -ixon -ixoff -crtscts raw
+  stty -F "$WC_SERIAL_PORT" $BAUD_RATES cs8 -cstopb -parenb -ixon -ixoff -crtscts raw
 
   # Svuota eventuali dati residui
-  cat < "$SERIAL_DEV" & CAT_PID=$!
+  cat < "$WC_SERIAL_PORT" & CAT_PID=$!
   sleep 0.5
   kill $CAT_PID
   wait $CAT_PID 2>/dev/null
 
   # Invia il comando per leggere la temperatura
-  echo -n "t" > "$SERIAL_DEV"
+  echo -n "t" > "$WC_SERIAL_PORT"
 
   # Leggi la risposta (timeout 2 secondi)
-  TEMP=$(timeout 2 cat < "$SERIAL_DEV" | tr -d '\r\n' | head -n 1)
+  TEMP=$(timeout 2 cat < "$WC_SERIAL_PORT" | tr -d '\r\n' | head -n 1)
 
   echo "Temperatura SHT31: $TEMP °C"
 } || {
