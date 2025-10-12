@@ -5,7 +5,7 @@
 # Invia il comando 't' per richiedere la temperatura e legge la risposta
 {
   # Imposta i parametri seriali
-  stty -F "$WC_SERIAL_PORT" $BAUD_RATES cs8 -cstopb -parenb -ixon -ixoff -crtscts raw
+  stty -F "$WC_SERIAL_PORT" $WC_BAUD_RATES cs8 -cstopb -parenb -ixon -ixoff -crtscts raw
 
   # Svuota eventuali dati residui
   cat < "$WC_SERIAL_PORT" & CAT_PID=$!
