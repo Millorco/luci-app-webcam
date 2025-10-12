@@ -16,5 +16,15 @@ chmod +x install.sh
 ./install.sh
 ```
 
+### Dipendenze
+
+stty
+
+```sh
+opkg update
+opkg install coreutils-stty
+```
+
+
 
 
