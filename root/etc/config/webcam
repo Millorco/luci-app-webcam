@@ -6,7 +6,7 @@ config general 'general'
         option latitude '41.929308'
         option longitude '12.464880'
         option temp_scale 'c'
-        option heating '1'
+        option heating '0'
         option serial_port '/dev/ttyS0'
         option baud_rates '9600'
 
