@@ -112,28 +112,6 @@ if [ -d "root" ]; then
     done
 fi
 
-# 3. File LuCI - luasrc → /usr/lib/lua/luci/
-if [ -d "luasrc" ]; then
-    echo "Copio file LuCI (luasrc → /usr/lib/lua/luci/)..."
-    
-    if [ -d "luasrc/controller" ]; then
-        mkdir -p /usr/lib/lua/luci/controller
-        cp -r luasrc/controller/* /usr/lib/lua/luci/controller/ 2>/dev/null || true
-    fi
-    
-    if [ -d "luasrc/model" ]; then
-        mkdir -p /usr/lib/lua/luci/model
-        cp -r luasrc/model/* /usr/lib/lua/luci/model/ 2>/dev/null || true
-    fi
-    
-    if [ -d "luasrc/view" ]; then
-        mkdir -p /usr/lib/lua/luci/view
-        cp -r luasrc/view/* /usr/lib/lua/luci/view/ 2>/dev/null || true
-    fi
-fi
-
-
-
 
 # Pulisce la cache LuCI
 echo "Pulisco la cache LuCI..."
@@ -145,7 +123,6 @@ echo ""
 echo -e "${YELLOW}Riepilogo copia file:${NC}"
 echo "✓ htdocs/ → /www/"
 echo "✓ root/ → /"
-echo "✓ luasrc/ → /usr/lib/lua/luci/"
 echo "✓ File in /usr/bin/ resi eseguibili"
 
 echo ""
