@@ -10,7 +10,7 @@ In all cases, you'll want to log out of the web interface and back in to force a
 ### From git
 
 ```sh
-scp -r root/* root@192.168.1.1:/
+wget https://raw.github.com/Millorco/luci-app-webcam/main/install.sh
 chmod +x install.sh
 ./install.sh
 ```
