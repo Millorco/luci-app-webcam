@@ -3,7 +3,7 @@
 # Script per installare luci-app-webcam su OpenWrt
 # Repository: https://github.com/Millorco/luci-app-webcam.git
 
-echo "=== Installazione luci-app-webcam ==="
+echo "=== Installazione luci-app-webcam (ultima release) ==="
 echo ""
 
 # Verifica che wget o curl siano disponibili
@@ -12,19 +12,36 @@ if ! command -v wget &> /dev/null && ! command -v curl &> /dev/null; then
     exit 1
 fi
 
+# Verifica che tar sia disponibile
+if ! command -v tar &> /dev/null; then
+    echo "ERRORE: tar non disponibile"
+    exit 1
+fi
+
 # Directory temporanea
 TMP_DIR="/tmp/luci-app-webcam"
-ZIP_FILE="/tmp/webcam.zip"
+TAR_FILE="/tmp/webcam.tar.gz"
 INSTALL_DIR="/usr/lib/lua/luci"
 
-echo "Download repository da GitHub..."
-rm -rf "$TMP_DIR" "$ZIP_FILE"
+# Recupera l'URL dell'ultima release tramite GitHub API
+echo "Rilevamento ultima release..."
+LATEST_URL=$(curl -s https://api.github.com/repos/Millorco/luci-app-webcam/releases/latest | \
+    grep "tarball_url" | head -n 1 | cut -d '"' -f 4)
 
-# Scarica il repository come ZIP
+if [ -z "$LATEST_URL" ]; then
+    echo "ERRORE: impossibile trovare l'ultima release."
+    exit 1
+fi
+
+echo "Ultima release: $LATEST_URL"
+
+echo "Download repository (tar.gz) dalla release..."
+rm -rf "$TMP_DIR" "$TAR_FILE"
+
 if command -v wget &> /dev/null; then
-    wget -O "$ZIP_FILE" "https://github.com/Millorco/luci-app-webcam/archive/refs/heads/master.zip"
+    wget -O "$TAR_FILE" "$LATEST_URL"
 else
-    curl -L -o "$ZIP_FILE" "https://github.com/Millorco/luci-app-webcam/archive/refs/heads/master.zip"
+    curl -L -o "$TAR_FILE" "$LATEST_URL"
 fi
 
 if [ $? -ne 0 ]; then
@@ -34,20 +51,20 @@ fi
 
 echo "Estrazione archivio..."
 mkdir -p "$TMP_DIR"
-unzip -q "$ZIP_FILE" -d "$TMP_DIR"
+tar -xzf "$TAR_FILE" -C "$TMP_DIR"
 
 if [ $? -ne 0 ]; then
     echo "ERRORE: Impossibile estrarre l'archivio"
-    rm -f "$ZIP_FILE"
+    rm -f "$TAR_FILE"
     exit 1
 fi
 
-# Trova la directory estratta (solitamente luci-app-webcam-master)
-EXTRACTED_DIR=$(find "$TMP_DIR" -maxdepth 1 -type d -name "luci-app-webcam-*" | head -n 1)
+# Trova la directory estratta (di solito Millorco-luci-app-webcam-*)
+EXTRACTED_DIR=$(find "$TMP_DIR" -maxdepth 1 -type d -name "*luci-app-webcam*" | head -n 1)
 
 if [ -z "$EXTRACTED_DIR" ]; then
     echo "ERRORE: Directory estratta non trovata"
-    rm -rf "$TMP_DIR" "$ZIP_FILE"
+    rm -rf "$TMP_DIR" "$TAR_FILE"
     exit 1
 fi
 
@@ -70,7 +87,7 @@ fi
 if [ -d "$EXTRACTED_DIR/root" ]; then
     cp -r "$EXTRACTED_DIR/root/"* / 2>/dev/null
     echo "- File root copiati"
-    
+
     # Rendi eseguibili solo i file copiati da root/usr/bin/
     if [ -d "$EXTRACTED_DIR/root/usr/bin" ]; then
         for file in "$EXTRACTED_DIR/root/usr/bin/"*; do
@@ -101,7 +118,7 @@ fi
 
 # Pulizia
 echo "Pulizia file temporanei..."
-rm -rf "$TMP_DIR" "$ZIP_FILE"
+rm -rf "$TMP_DIR" "$TAR_FILE"
 
 # Riavvio servizi LuCI
 echo "Riavvio servizi LuCI..."
