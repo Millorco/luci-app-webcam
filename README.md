@@ -23,6 +23,7 @@ stty
 ```sh
 opkg update
 opkg install coreutils-stty
+opkg install curl
 opkg install gphoto2
 opkg install libgphoto2-drivers-ptp2
 opkg install gphoto2 libgphoto2-drivers-iclick
