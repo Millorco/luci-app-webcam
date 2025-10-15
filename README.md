@@ -18,8 +18,6 @@ chmod +x install.sh
 
 ### Dipendenze
 
-stty
-
 ```sh
 opkg update
 opkg install coreutils-stty
