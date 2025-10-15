@@ -1,9 +1,5 @@
 #!/bin/sh
 
-# Script corretto per installare luci-app-webcam su OpenWrt
-# htdocs → /www/
-# root → /
-
 set -e
 
 # Colori per output
