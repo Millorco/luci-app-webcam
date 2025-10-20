@@ -2,20 +2,18 @@
 
 # Script per aggiungere configurazione LED power a OpenWrt usando UCI
 
-LED_NAME="led_power"
-
 # Verifica se la configurazione LED esiste già
-if uci -q get system.$LED_NAME > /dev/null 2>&1; then
-    echo "La configurazione LED '$LED_NAME' esiste già"
+if uci -q get system.led_power > /dev/null 2>&1; then
+    echo "La configurazione LED 'led_power' esiste già"
     exit 0
 fi
 
 # Aggiunge la configurazione LED usando UCI
-uci set system.$LED_NAME=led
-uci set system.$LED_NAME.name='power'
-uci set system.$LED_NAME.sysfs='green:power'
-uci set system.$LED_NAME.trigger='none'
-uci set system.$LED_NAME.default='0'
+uci set system.led_power=led
+uci set system.led_power.name='power'
+uci set system.led_power.sysfs='green:power'
+uci set system.led_power.trigger='none'
+uci set system.led_power.default='0'
 
 # Salva le modifiche
 uci commit system
