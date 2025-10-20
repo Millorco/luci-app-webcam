@@ -97,14 +97,19 @@ void processCommand(String command, Stream& serialPort) {
 	} else if (command == "d") {  // Debug connection
 			serialPort.print("OK");
 		
-	}   
+	} else if (command == "r") {  // Reset PC
+			resetFunc();
+		
+	}     
 }
 
 void resetFunc() {
 	digitalWrite(4, HIGH);
+	digitalWrite(2, HIGH);
 	lastHeartbeatTime = millis();
-	delay(1000);
+	delay(3000);
 	digitalWrite(4, LOW);
-	Serial.println("Reset PC completato");
-	WebcamSerial.println("Reset PC completato");
+	digitalWrite(2, LOW);
+	Serial.println("Reset completato");
+	WebcamSerial.println("Reset completato");
 }
