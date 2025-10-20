@@ -7,11 +7,12 @@
 │       └── resources
 │           └── view
 │               └── webcam
-│                   ├── form.js
-│                   ├── htmlview.js
-│                   ├── rpc-jsonmap-tablesection.js
-│                   ├── rpc-jsonmap-typedsection.js
-│                   └── rpc.js
+│                   ├── camera_setting.js
+│                   ├── day_setting.js
+│                   ├── night_setting.js
+│                   ├── schedule.js
+│                   ├── system_setting.js
+│                   └── up_server.js
 ├── Makefile
 ├── po
 │   ├── templates
