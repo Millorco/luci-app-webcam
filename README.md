@@ -13,7 +13,7 @@ chmod +x install.sh
 ./install.sh
 ```
 
-### Dipendenze
+### Dependance
 
 ```sh
 opkg update
