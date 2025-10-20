@@ -5,9 +5,6 @@ Previously the LuCI used a Lua server-side render approach which is deprecated n
 
 ## Installation
 
-In all cases, you'll want to log out of the web interface and back in to force a cache refresh after installing the new package.
-
-### From git
 To install the luci-app-webcam to your OpenWrt instance
 
 ```sh
