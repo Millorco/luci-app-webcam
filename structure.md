@@ -6,7 +6,7 @@
 │   └── luci-static
 │       └── resources
 │           └── view
-│               └── example
+│               └── webcam
 │                   ├── form.js
 │                   ├── htmlview.js
 │                   ├── rpc-jsonmap-tablesection.js
