@@ -20,19 +20,28 @@
 ├── README.md
 └── root
     ├── etc
-    │   ├── luci.example.yaml
-    │   └── uci-defaults
-    │       └── 80_example
+    │   ├── config
+    │   │   └── webcam
+    │   └── crontabs
+    │       └── root
     └── usr
+        ├── bin
+        │   ├── add_led_config
+        │   ├── capture
+        │   ├── heartbeat
+        │   ├── read_temp
+        │   ├── serialsend
+        │   ├── test_serial
+        │   └── webcam.cfg
+        │ 
         └── share
             ├── luci
             │   └── menu.d
-            │       └── luci-app-example.json
+            │       └── luci-app-webcam.json
             └── rpcd
-                ├── acl.d
-                │   └── luci-app-example.json
-                └── ucode
-                    └── example.uc
+                └── acl.d
+                    └── luci-app-webcam.json
+
 
 ```
 
