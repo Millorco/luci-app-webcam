@@ -23,6 +23,52 @@ opkg install gphoto2
 opkg install libgphoto2-drivers-ptp2
 ```
 
+# Application structure
+
+```
+.
+├── htdocs
+│   └── luci-static
+│       └── resources
+│           └── view
+│               └── webcam
+│                   ├── camera_setting.js
+│                   ├── day_setting.js
+│                   ├── night_setting.js
+│                   ├── schedule.js
+│                   ├── system_setting.js
+│                   └── up_server.js
+├── Makefile
+├── po
+│   ├── templates
+│   │   └── example.pot
+├── README.md
+└── root
+    ├── etc
+    │   ├── config
+    │   │   └── webcam
+    │   └── crontabs
+    │       └── root
+    └── usr
+        ├── bin
+        │   ├── add_led_config
+        │   ├── capture
+        │   ├── heartbeat
+        │   ├── read_temp
+        │   ├── serialsend
+        │   ├── test_serial
+        │   └── webcam.cfg
+        │ 
+        └── share
+            ├── luci
+            │   └── menu.d
+            │       └── luci-app-webcam.json
+            └── rpcd
+                └── acl.d
+                    └── luci-app-webcam.json
+
+
+```
 
 # Board
 
