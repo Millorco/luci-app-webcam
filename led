@@ -1,0 +1,17 @@
+
+config led 'led_wifi_led'
+        option name 'wifi'
+        option sysfs 'red:wlan'
+        option trigger 'none'
+        option default '0'
+
+config led 'led_wan'
+        option name 'wan'
+        option sysfs 'green:wan'
+        option trigger 'none'
+        option port_mask '0x1'
+
+config led 'led_power'
+        option name 'power'
+        option sysfs 'green:power'
+        option trigger 'none'
