@@ -1,0 +1,42 @@
+#!/bin/sh
+
+# === CONFIGURAZIONE ===
+STATE_FILE="/tmp/last_camera_model.txt"   # File dove memorizzare il modello precedente
+
+# === FUNZIONE PER OTTENERE IL MODELLO DELLA FOTOCAMERA ===
+get_camera_model() {
+    gphoto2 --auto-detect | awk 'NR>2 && NF{print $1" "$2" "$3" "$4" "$5}' | head -n 1
+}
+
+# === FUNZIONE DI TEST ===
+config_export() {
+    echo "👋 Hello World! La fotocamera è cambiata."
+        iso_export
+        aperture_export
+        shutterspeed_export
+}
+
+# === MAIN ===
+MODEL=$(get_camera_model)
+
+if [ -z "$MODEL" ]; then
+    echo "❌ Nessuna fotocamera rilevata."
+    exit 1
+fi
+
+echo "📷 Fotocamera rilevata: $MODEL"
+
+if [ -f "$STATE_FILE" ]; then
+    LAST_MODEL=$(cat "$STATE_FILE")
+    if [ "$MODEL" != "$LAST_MODEL" ]; then
+        echo "🔄 Modello cambiato da '$LAST_MODEL' a '$MODEL'."
+        echo "$MODEL" > "$STATE_FILE"
+        config_export
+    else
+        echo "✅ Modello invariato: $MODEL"
+    fi
+else
+    echo "🆕 Prima esecuzione: salvo il modello."
+    echo "$MODEL" > "$STATE_FILE"
+    config_export
+fi
