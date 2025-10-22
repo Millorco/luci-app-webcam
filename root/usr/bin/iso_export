@@ -1,0 +1,58 @@
+#!/bin/sh
+
+# Nome del file JSON di output
+OUTPUT_FILE="/www/luci-static/resources/webcam/iso_data.json"
+
+# Il comando gphoto2 per ottenere le configurazioni ISO
+GPHOTO_COMMAND="gphoto2 --get-config /main/imgsettings/iso"
+
+# 1. Esegui il comando gphoto2
+echo "Esecuzione di: $GPHOTO_COMMAND"
+GPHOTO_OUTPUT=$($GPHOTO_COMMAND 2>&1)
+EXIT_CODE=$?
+
+# Controlla se il comando gphoto2 è andato a buon fine
+if [ "$EXIT_CODE" -ne 0 ]; then
+    echo "Errore durante l'esecuzione di gphoto2. Assicurati che la fotocamera sia collegata."
+    echo "Output di gphoto2:"
+    echo "$GPHOTO_OUTPUT"
+    exit 1
+fi
+
+# 2. Estrazione e formattazione dei dati
+# --- PREPARA LE SCELTE (Choice: N Descrizione) ---
+# Trasforma ogni riga in un oggetto JSON e aggiunge una virgola e un a capo.
+# Risultato: { "value": "0", "label": "Auto" },\n{ "value": "1", "label": "100" },\n...
+CHOICES_RAW_LIST=$(echo "$GPHOTO_OUTPUT" | \
+    grep '^Choice:' | \
+    sed 's/^Choice:[[:space:]]\+//' | \
+    sed -e 's/^\([0-9]\+\)[[:space:]]\+\(.*\)/{ "value": "\1", "label": "\2" },/' )
+
+# --- RIMUOVI LA VIRGOLA FINALE E AGGIUNGI INDENTAZIONE ---
+# 1. Rimuovi l'ultima virgola e il carattere a capo (che sono sempre presenti)
+# 2. Pulisci gli spazi bianchi finali (xargs)
+# 3. Sostituisci i ', ' con ',\n    ' per l'indentazione
+# 4. Aggiungi l'indentazione iniziale
+CHOICES_JSON=$(echo "$CHOICES_RAW_LIST" | \
+    sed '$s/,\s*$//' | \
+    tr '\n' '@' | \
+    sed 's/@/\n/g' | \
+    sed 's/^/    /')
+
+# Nota: la sostituzione con sed '$s/,\s*$//' rimuove la virgola e gli spazi finali 
+# solo sull'ultima riga.
+
+# 3. Costruzione del file JSON (usando printf per compatibilità con /bin/sh)
+printf "{\n" > "$OUTPUT_FILE"
+printf "  \"iso_values\": [\n" >> "$OUTPUT_FILE"
+printf "%s\n" "$CHOICES_JSON" >> "$OUTPUT_FILE"
+printf "  ]\n" >> "$OUTPUT_FILE"
+printf "}\n" >> "$OUTPUT_FILE"
+
+# 4. Output
+echo "---"
+echo "✅ Fatto! I valori ISO sono stati esportati in '$OUTPUT_FILE'."
+echo "Contenuto del file:"
+echo "---"
+cat "$OUTPUT_FILE"
+echo "---"
