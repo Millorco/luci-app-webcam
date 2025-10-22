@@ -7,7 +7,7 @@ return view.extend({
     render: function() {
         var m, s, o, oAperture, oShutterspeed;
         
-        m = new form.Map('webcam', _('Webcam Settings'));
+        m = new form.Map('webcam', _(''));
         s = m.section(form.TypedSection, 'day', _('Day Shooting Settings'));
         s.anonymous = true;
         
