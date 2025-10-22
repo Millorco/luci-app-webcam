@@ -1,6 +1,6 @@
 {
   "iso_values": [
-    { "value": "0", "label": "Aut22" },
+    { "value": "0", "label": "Auto" },
     { "value": "1", "label": "100" },
     { "value": "2", "label": "200" },
     { "value": "3", "label": "400" },
