@@ -26,25 +26,9 @@
 			"path": "webcam/camera_setting"
 		}
 	},
-	"admin/services/webcam/day_setting": {
-		"title": "Day Setting",
-		"order": 30,
-		"action": {
-			"type": "view",
-			"path": "webcam/day_setting"
-		}
-	},
-	"admin/services/webcam/night_setting": {
-		"title": "Night Setting",
-		"order": 40,
-		"action": {
-			"type": "view",
-			"path": "webcam/night_setting"
-		}
-	},
 	"admin/services/webcam/up_server": {
 		"title": "Upload  Server",
-		"order": 50,
+		"order": 30,
 		"action": {
 			"type": "view",
 			"path": "webcam/up_server"
@@ -52,7 +36,7 @@
 	},
 	"admin/services/webcam/schedule": {
 		"title": "Schedule",
-		"order": 60,
+		"order": 40,
 		"action": {
 			"type": "view",
 			"path": "webcam/schedule"
