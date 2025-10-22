@@ -38,7 +38,7 @@ CHOICES_JSON=$(echo "$CHOICES_RAW_LIST" | \
 
 # 3. Costruzione del file JSON (usando printf per compatibilità con /bin/sh)
 printf "{\n" > "$OUTPUT_FILE"
-printf "  \"shutter_values\": [\n" >> "$OUTPUT_FILE"
+printf "  \"shutterspeed_values\": [\n" >> "$OUTPUT_FILE"
 printf "%s\n" "$CHOICES_JSON" >> "$OUTPUT_FILE"
 printf "  ]\n" >> "$OUTPUT_FILE"
 printf "}\n" >> "$OUTPUT_FILE"
