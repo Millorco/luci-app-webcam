@@ -1,0 +1,52 @@
+#!/bin/sh
+
+# Nome del file JSON di output
+OUTPUT_FILE="/www/luci-static/resources/webcam/aperture_data.json"
+
+# Il comando gphoto2 per ottenere le configurazioni dell'APERTURE
+GPHOTO_COMMAND="gphoto2 --get-config /main/capturesettings/aperture"
+
+# 1. Esegui il comando gphoto2
+echo "Esecuzione di: $GPHOTO_COMMAND"
+GPHOTO_OUTPUT=$($GPHOTO_COMMAND 2>&1)
+EXIT_CODE=$?
+
+# Controlla se il comando gphoto2 è andato a buon fine
+if [ "$EXIT_CODE" -ne 0 ]; then
+    echo "Errore durante l'esecuzione di gphoto2. Assicurati che la fotocamera sia collegata."
+    echo "Output di gphoto2:"
+    echo "$GPHOTO_OUTPUT"
+    exit 1
+fi
+
+# 2. Estrazione e formattazione dei dati
+# --- PREPARA LE SCELTE (Choice: N Descrizione) ---
+# Trasforma ogni riga in un oggetto JSON: { "value": "N", "label": "Descrizione" },
+CHOICES_RAW_LIST=$(echo "$GPHOTO_OUTPUT" | \
+    grep '^Choice:' | \
+    sed 's/^Choice:[[:space:]]\+//' | \
+    sed -e 's/^\([0-9]\+\)[[:space:]]\+\(.*\)/{ "value": "\1", "label": "\2" },/' )
+
+# --- RIMUOVI LA VIRGOLA FINALE E AGGIUNGI INDENTAZIONE ---
+# 1. sed: Rimuove la virgola finale (e gli spazi bianchi) SOLO sull'ultima riga ($)
+# 2. tr & sed: Sostituisce i caratteri a capo per gestire l'indentazione
+CHOICES_JSON=$(echo "$CHOICES_RAW_LIST" | \
+    sed '$s/,\s*$//' | \
+    tr '\n' '@' | \
+    sed 's/@/\n/g' | \
+    sed 's/^/    /')
+
+# 3. Costruzione del file JSON (usando printf per compatibilità con /bin/sh)
+printf "{\n" > "$OUTPUT_FILE"
+printf "  \"aperture_values\": [\n" >> "$OUTPUT_FILE"
+printf "%s\n" "$CHOICES_JSON" >> "$OUTPUT_FILE"
+printf "  ]\n" >> "$OUTPUT_FILE"
+printf "}\n" >> "$OUTPUT_FILE"
+
+# 4. Output
+echo "---"
+echo "✅ Fatto! I valori di Apertura sono stati esportati in '$OUTPUT_FILE'."
+echo "Contenuto del file:"
+echo "---"
+cat "$OUTPUT_FILE"
+echo "---"
