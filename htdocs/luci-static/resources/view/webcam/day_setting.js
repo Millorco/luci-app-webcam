@@ -5,25 +5,39 @@
 
 return view.extend({
     render: function() {
-        var m, s, o, oAperture, oShutterspeed;
-        
+        var m, sDay, sNight;
+        var oIsoDay, oApertureDay, oShutterDay;
+        var oIsoNight, oApertureNight, oShutterNight;
+
         m = new form.Map('webcam', _(''));
-        s = m.section(form.TypedSection, 'day', _('Day Shooting Settings'));
-        s.anonymous = true;
-        
-        // Campo ISO
-        o = s.option(form.ListValue, 'iso_day', _('ISO'));
-        o.rmempty = false;
-        
-        // Campo Aperture
-        oAperture = s.option(form.ListValue, 'aperture_day', _('Aperture'));
-        oAperture.rmempty = false;
-        
-        // Campo Shutter Speed
-        oShutterspeed = s.option(form.ListValue, 'shutterspeed_day', _('Shutter Speed'));
-        oShutterspeed.rmempty = false;
-        
-        // Carica tutti i JSON in parallelo
+
+        // Sezione Day
+        sDay = m.section(form.TypedSection, 'day', _('Day Shooting Settings'));
+        sDay.anonymous = true;
+
+        oIsoDay = sDay.option(form.ListValue, 'iso_day', _('ISO'));
+        oIsoDay.rmempty = false;
+
+        oApertureDay = sDay.option(form.ListValue, 'aperture_day', _('Aperture'));
+        oApertureDay.rmempty = false;
+
+        oShutterDay = sDay.option(form.ListValue, 'shutterspeed_day', _('Shutter Speed'));
+        oShutterDay.rmempty = false;
+
+        // Sezione Night
+        sNight = m.section(form.TypedSection, 'night', _('Night Shooting Settings'));
+        sNight.anonymous = true;
+
+        oIsoNight = sNight.option(form.ListValue, 'iso_night', _('ISO'));
+        oIsoNight.rmempty = false;
+
+        oApertureNight = sNight.option(form.ListValue, 'aperture_night', _('Aperture'));
+        oApertureNight.rmempty = false;
+
+        oShutterNight = sNight.option(form.ListValue, 'shutterspeed_night', _('Shutter Speed'));
+        oShutterNight.rmempty = false;
+
+        // Carica i JSON in parallelo e popola entrambe le sezioni
         return Promise.all([
             request.get('/luci-static/resources/webcam/iso_data.json'),
             request.get('/luci-static/resources/webcam/aperture_data.json'),
@@ -32,22 +46,25 @@ return view.extend({
             var isoData = responses[0].json();
             var apertureData = responses[1].json();
             var shutterspeedData = responses[2].json();
-            
-            // Popola i valori ISO
+
+            // Popola i valori ISO (day + night)
             isoData.iso_values.forEach(function(iso) {
-                o.value(iso.value, _(iso.label));
+                oIsoDay.value(iso.value, _(iso.label));
+                oIsoNight.value(iso.value, _(iso.label));
             });
-            
-            // Popola i valori Aperture
+
+            // Popola i valori Aperture (day + night)
             apertureData.aperture_values.forEach(function(aperture) {
-                oAperture.value(aperture.value, _(aperture.label));
+                oApertureDay.value(aperture.value, _(aperture.label));
+                oApertureNight.value(aperture.value, _(aperture.label));
             });
-            
-            // Popola i valori Shutter Speed
+
+            // Popola i valori Shutter Speed (day + night)
             shutterspeedData.shutterspeed_values.forEach(function(shutterspeed) {
-                oShutterspeed.value(shutterspeed.value, _(shutterspeed.label));
+                oShutterDay.value(shutterspeed.value, _(shutterspeed.label));
+                oShutterNight.value(shutterspeed.value, _(shutterspeed.label));
             });
-            
+
             return m.render();
         }).catch(function(error) {
             console.error('Errore nel caricamento dei dati:', error);
