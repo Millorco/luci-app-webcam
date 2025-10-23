@@ -1,5 +1,5 @@
 {
-  "shutter_values": [
+  "shutterspeed_values": [
     { "value": "0", "label": "bulb" },
     { "value": "1", "label": "30" },
     { "value": "2", "label": "25" },
