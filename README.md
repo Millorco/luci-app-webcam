@@ -86,5 +86,4 @@ t - Lettura temperatura
 u - Lettura umidità
 s - Stato completo del sistema
 n - Test connessione
-
 r - Reset Pc Camera
