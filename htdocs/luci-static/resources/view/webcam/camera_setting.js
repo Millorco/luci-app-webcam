@@ -11,12 +11,12 @@ return view.extend({
 
         m = new form.Map('webcam', _(''));
 
-        // Sezione Common (da camera_setting.js)
+        // Sezione Common
         sCommon = m.section(form.TypedSection, 'shooting', _('Common Shooting Settings'));
         sCommon.anonymous = true;
         sCommon.option(form.Value, 'photo_name', _('Photo File Name'));
 
-        // Sezione Day (da day_setting.js)
+        // Sezione Day
         sDay = m.section(form.TypedSection, 'day', _('Day Shooting Settings'));
         sDay.anonymous = true;
 
@@ -29,7 +29,7 @@ return view.extend({
         oShutterDay = sDay.option(form.ListValue, 'shutterspeed_day', _('Shutter Speed'));
         oShutterDay.rmempty = false;
 
-        // Sezione Night (da day_setting.js)
+        // Sezione Night 
         sNight = m.section(form.TypedSection, 'night', _('Night Shooting Settings'));
         sNight.anonymous = true;
 
