@@ -30,14 +30,17 @@ opkg install libgphoto2-drivers-ptp2
 ├── htdocs
 │   └── luci-static
 │       └── resources
-│           └── view
-│               └── webcam
-│                   ├── camera_setting.js
-│                   ├── day_setting.js
-│                   ├── night_setting.js
-│                   ├── schedule.js
-│                   ├── system_setting.js
-│                   └── up_server.js
+│           ├── view
+│           │   └── webcam
+│           │       ├── camera_setting.js
+│           │       ├── schedule.js
+│           │       ├── system_setting.js
+│           │       └── up_server.js
+│           │
+│           └── webcam
+│               ├──
+│               ├──
+│               └──
 ├── Makefile
 ├── po
 │   ├── templates
