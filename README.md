@@ -38,13 +38,14 @@ opkg install libgphoto2-drivers-ptp2
 │           │       └── up_server.js
 │           │
 │           └── webcam
-│               ├──
-│               ├──
-│               └──
+│               ├── aperture_data.json
+│               ├── iso_data.json
+│               └── shutterspeed_data.json
 ├── Makefile
 ├── po
 │   ├── templates
-│   │   └── example.pot
+│       └── example.pot
+│
 ├── README.md
 └── root
     ├── etc
@@ -52,6 +53,7 @@ opkg install libgphoto2-drivers-ptp2
     │   │   └── webcam
     │   └── crontabs
     │       └── root
+    │
     └── usr
         ├── bin
         │   ├── add_led_config
@@ -66,6 +68,7 @@ opkg install libgphoto2-drivers-ptp2
             ├── luci
             │   └── menu.d
             │       └── luci-app-webcam.json
+            │
             └── rpcd
                 └── acl.d
                     └── luci-app-webcam.json
