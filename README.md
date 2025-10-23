@@ -52,10 +52,14 @@ opkg install libgphoto2-drivers-ptp2
     └── usr
         ├── bin
         │   ├── add_led_config
+        │   ├── aperture_export
         │   ├── capture
+        │   ├── check_camera_model
         │   ├── heartbeat
+        │   ├── iso_export
         │   ├── read_temp
         │   ├── serialsend
+        │   ├── shutterspeed_export
         │   ├── test_serial
         │   └── webcam.cfg
         │ 
@@ -63,6 +67,7 @@ opkg install libgphoto2-drivers-ptp2
             ├── luci
             │   └── menu.d
             │       └── luci-app-webcam.json
+            │
             └── rpcd
                 └── acl.d
                     └── luci-app-webcam.json
@@ -73,20 +78,13 @@ opkg install libgphoto2-drivers-ptp2
 # Board
 
 b - Segnale heartbeat
-
 C/c - Camera ON/OFF
-
 H/h - Riscaldamento ON/OFF
 P/p - PC ON/OFF
-
 F/f - Ventola ON/OFF
-
 t - Lettura temperatura
-
 u - Lettura umidità
-
 s - Stato completo del sistema
-
 n - Test connessione
 
 r - Reset Pc Camera
