@@ -46,7 +46,6 @@ capture_day() {
 
     gphoto2 --set-config eosremoterelease=3 \
         --set-config eosremoterelease=4 \
-        --set-config whitebalance="$WC_WHITEBALANCE" \
         --set-config iso="$WC_ISO_DAY" \
         --set-config aperture="$WC_APERTURE_DAY" \
         --set-config shutterspeed="$WC_SHUTTERSPEED_DAY" \
@@ -76,7 +75,6 @@ capture_night() {
 
     gphoto2 --set-config eosremoterelease=3 \
         --set-config eosremoterelease=4 \
-        --set-config whitebalance="$WC_WHITEBALANCE" \
         --set-config iso="$WC_ISO_NIGHT" \
         --set-config aperture="$WC_APERTURE_NIGHT" \
         --set-config shutterspeed="$WC_SHUTTERSPEED_NIGHT" \
