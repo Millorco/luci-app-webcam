@@ -1,18 +1,5 @@
 {
-  "iso_values": [
-    { "value": "0", "label": "Auto" },
-    { "value": "1", "label": "100" },
-    { "value": "2", "label": "200" },
-    { "value": "3", "label": "400" },
-    { "value": "4", "label": "800" },
-    { "value": "5", "label": "1600" },
-    { "value": "6", "label": "3200" },
-    { "value": "7", "label": "6400" }
-  ]
-}
-root@VillaAylin:/www/luci-static/resources/webcam# cat shutterspeed_data.json 
-{
-  "shutter_values": [
+  "shutterspeed_values": [
     { "value": "0", "label": "bulb" },
     { "value": "1", "label": "30" },
     { "value": "2", "label": "25" },
