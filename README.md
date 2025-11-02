@@ -92,3 +92,7 @@ u - Lettura umidità
 s - Stato completo del sistema
 n - Test connessione
 r - Reset Pc Camera
+
+# Screenshot
+
+![System Setting](https://github.com/Millorco/luci-app-webcam/blob/b797289bb7683d42ad2c4d467c93871ec506cd6e/screenshot/system_setting.png)
