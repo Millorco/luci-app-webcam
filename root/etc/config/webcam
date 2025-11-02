@@ -2,7 +2,7 @@
 # Webcam setting
 #
 config general 'general'
-        option maintenance_mode 'no'
+        option maintenance_mode '1'
         option latitude '41.929308'
         option longitude '12.464880'
         option temp_scale 'c'
