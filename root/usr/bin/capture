@@ -10,28 +10,30 @@
 cd /tmp
 NOW_DATE="$(date +"%Y%m%d-%H%M")"
 FILENAME="${WC_PHOTO_NAME}_${NOW_DATE}.jpg"
+CIVIL_TWILIGHT_MINUTES=30  # Minuti prima/alba e dopo/tramonto
 
 # Funzione per avviare la cattura in base a giorno/notte
 start() {
-    # Recupera orari alba/tramonto da API sunrise-sunset.org (UTC)
-    DATA="$(wget -qO- "https://api.sunrise-sunset.org/json?lat=$WC_LATITUDE&lng=$WC_LONGITUDE&formatted=0")"
+	# Usa API sunrise-sunset con twilight civile
+	SUN_DATA=$(curl -s "https://api.sunrise-sunset.org/json?lat=$WC_LATITUDE&lng=$WC_LONGITUDE&formatted=0")
 
-    # Estrai orari alba e tramonto (in UTC)
-    RISE="$(echo "$DATA" | jq -r '.results.sunrise')"
-    SET="$(echo "$DATA" | jq -r '.results.sunset')"
+	SUNRISE=$(echo "$SUN_DATA" | grep -o '"sunrise":"[^"]*' | cut -d'"' -f4)
+	SUNSET=$(echo "$SUN_DATA" | grep -o '"sunset":"[^"]*' | cut -d'"' -f4)
 
-    # Ora attuale in UTC
-    NOW_UTC="$(date -u +"%Y-%m-%dT%H:%M:%S")"
+	# Converti e applica offset crepuscolo
+	SUNRISE_TS=$(date -d "$SUNRISE $CIVIL_TWILIGHT_MINUTES minutes ago" +%s)
+	SUNSET_TS=$(date -d "$SUNSET $CIVIL_TWILIGHT_MINUTES minutes" +%s)
+	CURRENT_TS=$(date -u +%s)
 
-    # Confronto (ISO8601, confronto lessicografico)
-    if [ "$NOW_UTC" \> "$RISE" ] && [ "$NOW_UTC" \< "$SET" ]; then
-        echo "giorno"
-        capture_day
-    else
-        echo "notte"
-        capture_night
-    fi
+	if [ $CURRENT_TS -ge $SUNRISE_TS ] && [ $CURRENT_TS -lt $SUNSET_TS ]; then
+		echo "DAY"
+		capture_day
+	else
+		echo "NIGHT"
+		capture_night
+	fi
 }
+
 
 # Funzione cattura per giorno
 capture_day() {
@@ -62,6 +64,7 @@ capture_day() {
     upload
 }
 
+
 # Funzione cattura per notte
 capture_night() {
     rm -f ./*.jpg 2>/dev/null
@@ -90,6 +93,7 @@ capture_night() {
 
     upload
 }
+
 
 # Funzione Upload Foto
 upload() {
@@ -120,6 +124,7 @@ upload() {
         exit 1
     fi
 }
+
 
 # Check Maintenance Mode
 if [ "${WC_MAINTENANCE_MODE:-0}" -eq 0 ]; then
