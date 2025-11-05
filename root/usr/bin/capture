@@ -14,18 +14,37 @@ CIVIL_TWILIGHT_MINUTES=30  # Minuti prima/alba e dopo/tramonto
 
 # Funzione per avviare la cattura in base a giorno/notte
 start() {
-	# Usa API sunrise-sunset con twilight civile
-	SUN_DATA=$(curl -s "https://api.sunrise-sunset.org/json?lat=$WC_LATITUDE&lng=$WC_LONGITUDE&formatted=0")
+	CURRENT_HOUR=$(date +%s 2>/dev/null)
 
-	SUNRISE=$(echo "$SUN_DATA" | grep -o '"sunrise":"[^"]*' | cut -d'"' -f4)
-	SUNSET=$(echo "$SUN_DATA" | grep -o '"sunset":"[^"]*' | cut -d'"' -f4)
+	if [ -z "$CURRENT_HOUR" ]; then
+		echo "ERRORE: Impossibile ottenere l'ora UNIX corrente. Assicurati che 'date +%s' sia supportato."
+		exit 1
+	fi
 
-	# Converti e applica offset crepuscolo
-	SUNRISE_TS=$(date -d "$SUNRISE $CIVIL_TWILIGHT_MINUTES minutes ago" +%s)
-	SUNSET_TS=$(date -d "$SUNSET $CIVIL_TWILIGHT_MINUTES minutes" +%s)
-	CURRENT_TS=$(date -u +%s)
+	JSON_DATA=$(curl -s "https://api.sunrise-sunset.org/json?lat=$WC_LATITUDE&lng=$WC_LONGITUDE&formatted=0")
 
-	if [ $CURRENT_TS -ge $SUNRISE_TS ] && [ $CURRENT_TS -lt $SUNSET_TS ]; then
+	SUNRISE_UTC=$(echo "$JSON_DATA" | grep '"sunrise"' | sed -n 's/.*"sunrise":"\([^"]*\)".*/\1/p')
+	SUNSET_UTC=$(echo "$JSON_DATA" | grep '"sunset"' | sed -n 's/.*"sunset":"\([^"]*\)".*/\1/p')
+
+	if [ -z "$SUNRISE_UTC" ] || [ -z "$SUNSET_UTC" ]; then
+		echo "ERRORE: Estrazione dei valori dall'API fallita."
+		echo "Risposta API: $JSON_DATA"
+		exit 1
+	fi
+
+	SUNRISE_FMT=$(echo "$SUNRISE_UTC" | sed 's/T/ /' | sed 's/+00:00//')
+	SUNSET_FMT=$(echo "$SUNSET_UTC" | sed 's/T/ /' | sed 's/+00:00//')
+
+	SUNRISE_TS=$(date -d "$SUNRISE_FMT" +%s 2>/dev/null)
+	SUNSET_TS=$(date -d "$SUNSET_FMT" +%s 2>/dev/null)
+
+	if [ -z "$SUNRISE_TS" ] || [ -z "$SUNSET_TS" ]; then
+		echo "ERRORE CRITICO: Il comando 'date -d' non è riuscito a convertire gli orari UTC in secondi UNIX."
+		echo "Questo accade spesso su sistemi minimali senza estensioni 'date' avanzate."
+		exit 1
+	fi
+
+	if [ "$CURRENT_HOUR" -ge "$SUNRISE_TS" ] && [ "$CURRENT_HOUR" -lt "$SUNSET_TS" ]; then
 		echo "DAY"
 		capture_day
 	else
