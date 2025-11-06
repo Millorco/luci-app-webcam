@@ -19,7 +19,6 @@ chmod +x install.sh
 opkg update
 opkg install coreutils-stty
 opkg install curl
-opkg install jq
 opkg install gphoto2
 opkg install libgphoto2-drivers-ptp2
 ```
