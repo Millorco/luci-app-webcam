@@ -100,3 +100,5 @@ opkg install libgphoto2-drivers-ptp2
 ![System Setting](https://github.com/Millorco/luci-app-webcam/blob/b797289bb7683d42ad2c4d467c93871ec506cd6e/screenshot/camera_setting.png)
 
 ![System Setting](https://github.com/Millorco/luci-app-webcam/blob/b797289bb7683d42ad2c4d467c93871ec506cd6e/screenshot/upload_server.png)
+
+![System Setting](https://github.com/Millorco/luci-app-webcam/blob/b797289bb7683d42ad2c4d467c93871ec506cd6e/screenshot/schedule.png)
