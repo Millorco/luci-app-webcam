@@ -22,3 +22,23 @@ start_service() {
     procd_set_param respawn_interval "$INTERVAL"
     procd_close_instance
 }
+
+
+
+
+
+#!/bin/sh /etc/rc.common
+
+START=99
+STOP=10
+
+start() {
+    echo "Avvio del servizio mioservizio..."
+    /usr/bin/webcam_timer &
+}
+
+stop() {
+    echo "Arresto del servizio mioservizio..."
+    # Se lo script crea processi in background, puoi fermarli qui
+    pkill -f /usr/bin/webcam_imer
+}
