@@ -19,133 +19,197 @@ if [ ! -f "/etc/openwrt_release" ]; then
     exit 1
 fi
 
-# Verifica se wget è installato
-if ! command -v wget >/dev/null 2>&1; then
-    echo -e "${RED}Errore: wget non è installato${NC}"
-    echo "Installalo con: opkg update && opkg install wget"
-    exit 1
-fi
+# Verifica se wget e curl sono installati
+for CMD in wget curl; do
+    if ! command -v "$CMD" >/dev/null 2>&1; then
+        echo -e "${RED}Errore: $CMD non è installato${NC}"
+        echo "Installalo con: opkg update && opkg install $CMD"
+        exit 1
+    fi
+done
 
-# Crea directory temporanea
+# Funzione per chiedere il tag GitHub da scaricare
+choose_github_tag() {
+    echo ""
+    echo "Recupero la lista dei tag da GitHub..."
+
+    TAGS_JSON=$(curl -s "https://api.github.com/repos/Millorco/luci-app-webcam/tags")
+
+    if [ -z "$TAGS_JSON" ]; then
+        echo -e "${RED}Errore: impossibile contattare GitHub${NC}"
+        exit 1
+    fi
+
+    TAGS=$(echo "$TAGS_JSON" | grep '"name"' | awk -F '"' '{print $4}')
+
+    if [ -z "$TAGS" ]; then
+        echo -e "${RED}Nessun tag trovato nel repository GitHub${NC}"
+        exit 1
+    fi
+
+    echo ""
+    echo "Versioni disponibili:"
+    echo ""
+
+    i=1
+    for T in $TAGS; do
+        echo "  $i) $T"
+        eval "TAG_$i=\"$T\""
+        i=$((i+1))
+    done
+
+    TOTAL=$((i-1))
+
+    echo ""
+    printf "Seleziona il numero della versione da installare (1-$TOTAL): "
+    read -r CHOICE
+
+    if ! echo "$CHOICE" | grep -qE "^[0-9]+$"; then
+        echo -e "${RED}Scelta non valida${NC}"
+        exit 1
+    fi
+
+    if [ "$CHOICE" -lt 1 ] || [ "$CHOICE" -gt "$TOTAL" ]; then
+        echo -e "${RED}Numero fuori range${NC}"
+        exit 1
+    fi
+
+    eval "SELECTED_TAG=\$TAG_$CHOICE"
+    echo ""
+    echo -e "${GREEN}Hai scelto il tag: $SELECTED_TAG${NC}"
+
+    SELECTED_URL="https://github.com/Millorco/luci-app-webcam/archive/refs/tags/$SELECTED_TAG.tar.gz"
+
+    echo "Download da: $SELECTED_URL"
+    if wget -q "$SELECTED_URL" -O webcam.tar.gz; then
+        echo -e "${GREEN}Download completato${NC}"
+    else
+        echo -e "${RED}Errore nel download della versione selezionata${NC}"
+        exit 1
+    fi
+}
+
+# Funzione per gestione pacchetti richiesti
+check_and_install_pkg() {
+    PKG="$1"
+
+    INSTALLED_VERSION=$(opkg list-installed | grep "^$PKG " | awk '{print $3}')
+    AVAILABLE_VERSION=$(opkg list | grep "^$PKG " | awk '{print $3}')
+
+    if [ -z "$INSTALLED_VERSION" ]; then
+        echo -e "${YELLOW}Pacchetto non installato: $PKG${NC}"
+        printf "Vuoi installarlo? (S/n): "
+        read -r r
+        case "$r" in
+            [nN]|[nN][oO]) return ;;
+            *) opkg install "$PKG" ;;
+        esac
+        return
+    fi
+
+    if [ "$INSTALLED_VERSION" = "$AVAILABLE_VERSION" ]; then
+        echo "✓ $PKG è già aggiornato alla versione $INSTALLED_VERSION"
+        return
+    fi
+
+    echo -e "${YELLOW}Pacchetto $PKG installato in versione $INSTALLED_VERSION, disponibile $AVAILABLE_VERSION${NC}"
+    printf "Aggiornare? (s/N): "
+    read -r r
+    case "$r" in
+        [sS]|[sS][iI]|[yY]) opkg install "$PKG" ;;
+        *) echo "Mantengo versione installata." ;;
+    esac
+}
+
+# Pacchetti necessari
+REQUIRED_PKGS="coreutils-stty curl gphoto2 libgphoto2-drivers-ptp2"
+
+echo ""
+echo -e "${GREEN}Verifica pacchetti necessari...${NC}"
+
+for PKG in $REQUIRED_PKGS; do
+    check_and_install_pkg "$PKG"
+done
+
+# Creazione directory temporanea
 mkdir -p "$TEMP_DIR"
 cd "$TEMP_DIR"
 
-# Scarica l'archivio del repository
-LATEST_URL="https://github.com/Millorco/luci-app-webcam/archive/refs/heads/main.tar.gz"
-echo "Scarico l'ultima versione da $LATEST_URL"
+# Chiede all’utente quale tag GitHub installare
+choose_github_tag
 
-if wget -q "$LATEST_URL" -O webcam.tar.gz; then
-    echo -e "${GREEN}Download completato${NC}"
-    tar -xzf webcam.tar.gz
-    cd luci-app-webcam-main
-else
-    echo -e "${RED}Errore nel download${NC}"
-    rm -rf "$TEMP_DIR"
-    exit 1
-fi
+# Estrae il tar.gz
+tar -xzf webcam.tar.gz
 
-# Verifica se il file /etc/config/webcam esiste e chiedi conferma
+# Rileva automaticamente la directory estratta
+EXTRACTED_DIR=$(tar -tf webcam.tar.gz | head -1 | cut -d/ -f1)
+cd "$EXTRACTED_DIR"
+
+echo -e "${GREEN}Installazione dei file...${NC}"
+
+# Verifica configurazione
 if [ -f "/etc/config/webcam" ]; then
-    echo -e "${YELLOW}Attenzione: Il file /etc/config/webcam esiste già${NC}"
+    echo -e "${YELLOW}Il file /etc/config/webcam esiste già${NC}"
     printf "Vuoi sovrascriverlo? (s/N): "
-    read -r response
-    case "$response" in
-        [sS]|[sS][iI]|[yY]|[yY][eE][sS])
-            echo "Sovrascrivo il file di configurazione..."
-            OVERWRITE_CONFIG=1
-            ;;
-        *)
-            echo "Mantengo il file di configurazione esistente"
-            OVERWRITE_CONFIG=0
-            ;;
+    read -r resp
+    case "$resp" in
+        [sS]*|[yY]*) OVERWRITE_CONFIG=1 ;;
+        *) OVERWRITE_CONFIG=0 ;;
     esac
 else
     OVERWRITE_CONFIG=1
 fi
 
-echo -e "${GREEN}Copia dei file nelle directory corrette...${NC}"
-
-# 1. File web - htdocs → /www/
+# Copia htdocs
 if [ -d "htdocs" ]; then
-    echo "Copio file web (htdocs → /www/)..."
-    cp -r htdocs/* /www/ 2>/dev/null || {
-        echo -e "${YELLOW}Nota: Alcuni file web potrebbero già esistere${NC}"
-    }
+    echo "Copio interfaccia web..."
+    cp -r htdocs/* /www/ 2>/dev/null || true
 fi
 
-# 2. File di sistema - root → /
+# Copia root/*
 if [ -d "root" ]; then
-    echo "Copio file di sistema (root → /)..."
-    
-    # Copia ricorsivamente mantenendo la struttura delle directory
+    echo "Copio file di sistema..."
     find root -type f | while read file; do
-        # Rimuove il prefisso "root/" dal percorso
         dest_path="${file#root/}"
         dest_dir=$(dirname "/$dest_path")
-        
-        # Se è il file di configurazione webcam e l'utente non vuole sovrascrivere, salta
+
+        # Evita sovrascrittura config se richiesto
         if [ "$dest_path" = "etc/config/webcam" ] && [ "$OVERWRITE_CONFIG" -eq 0 ]; then
-            echo "  Salto: /$dest_path (configurazione esistente mantenuta)"
+            echo "  Salto configurazione esistente"
             continue
         fi
-        
-        # Crea la directory di destinazione se non esiste
+
         mkdir -p "$dest_dir"
-        
-        # Copia il file
-        if cp "$file" "/$dest_path" 2>/dev/null; then
-            echo "  Copiato: $file → /$dest_path"
-            
-            # Se il file è in /usr/bin/, rendilo eseguibile
-            if echo "/$dest_path" | grep -q "^/usr/bin/"; then
-                chmod +x "/$dest_path" 2>/dev/null && \
-                    echo "    Render eseguibile: /$dest_path" || \
-                    echo -e "${YELLOW}    Impossibile rendere eseguibile: /$dest_path${NC}"
-            fi
-        else
-            echo -e "${YELLOW}  Attenzione: Impossibile copiare $file${NC}"
+        cp "$file" "/$dest_path"
+
+        if echo "/$dest_path" | grep -q "^/usr/bin/"; then
+            chmod +x "/$dest_path"
         fi
     done
 fi
 
+# Pulisce cache LuCI
+echo "Pulizia cache LuCI..."
+rm -rf /tmp/luci-indexcache /tmp/luci-modulecache
 
-# Pulisce la cache LuCI
-echo "Pulisco la cache LuCI..."
-rm -rf /tmp/luci-indexcache
-rm -rf /tmp/luci-modulecache
-
-echo -e "${GREEN}Installazione completata!${NC}"
+# Abilita servizio webcam_capture
 echo ""
-echo -e "${YELLOW}Riepilogo copia file:${NC}"
-echo "✓ htdocs/ → /www/"
-echo "✓ root/ → /"
-echo "✓ File in /usr/bin/ resi eseguibili"
+echo "Abilitazione servizio webcam_capture..."
 
-echo ""
-echo -e "${YELLOW}Prossimi passi:${NC}"
-echo "1. Riavvia LuCI: /etc/init.d/uhttpd restart"
-echo "2. Accedi all'interfaccia web di OpenWrt"
-echo "3. Verifica la presenza dell'app webcam"
-echo "4. Se necessario, riavvia i servizi: /etc/init.d/webcam restart"
+if chmod +x /etc/init.d/webcam_capture 2>/dev/null; then
+    if /etc/init.d/webcam_capture enable 2>/dev/null; then
+        /etc/init.d/webcam_capture start 2>/dev/null && \
+            echo -e "${GREEN}Servizio webcam_capture avviato correttamente${NC}" || \
+            echo -e "${RED}Errore: impossibile avviare il servizio${NC}"
+    else
+        echo -e "${RED}Errore: impossibile abilitare il servizio${NC}"
+    fi
+else
+    echo -e "${RED}Errore: impossibile rendere il servizio eseguibile${NC}"
+fi
 
 # Pulizia
 rm -rf "$TEMP_DIR"
-echo -e "${GREEN}Pulizia file temporanei completata${NC}"
 
 echo ""
-echo -e "${GREEN}Abilitazione del servizio webcam_capture...${NC}"
-
-chmod +x /etc/init.d/webcam_capture 2>/dev/null || \
-    echo -e "${YELLOW}Attenzione: impossibile impostare /etc/init.d/webcam_capture come eseguibile${NC}"
-
-if /etc/init.d/webcam_capture enable 2>/dev/null; then
-    echo "Servizio abilitato all'avvio"
-else
-    echo -e "${RED}Impossibile abilitare il servizio webcam_capture${NC}"
-fi
-
-if /etc/init.d/webcam_capture start 2>/dev/null; then
-    echo "Servizio avviato"
-else
-    echo -e "${RED}Impossibile avviare il servizio webcam_capture${NC}"
-fi
+echo -e "${GREEN}Installazione completata!${NC}"
