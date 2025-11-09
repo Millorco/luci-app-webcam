@@ -15,7 +15,8 @@ return view.extend({
         sCommon = m.section(form.TypedSection, 'shooting', _('Common Shooting Settings'));
         sCommon.anonymous = true;
         sCommon.option(form.Value, 'photo_name', _('Photo File Name'));
-
+        sCommon.option(form.Value, 'photo_time_lapse', _('Photo Time Shedule'));
+        
         // Sezione Day
         sDay = m.section(form.TypedSection, 'day', _('Day Shooting Settings'));
         sDay.anonymous = true;

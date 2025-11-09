@@ -1,9 +1,3 @@
-## Camera Schedule Shooting ##
-*/10 * * * * /usr/bin/capture
-##
-##
-
-
 ## Heartbeat PING ##
 ##
 ## DO NOT CHANGE THIS SETTING ##

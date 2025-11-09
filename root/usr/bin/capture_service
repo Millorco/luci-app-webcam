@@ -1,0 +1,7 @@
+#!/bin/sh
+
+while true; do
+    WC_TIME_LAPSE=`/sbin/uci get webcam.@shooting[0].photo_time_lapse   `
+    /usr/bin/capture
+    sleep "${WC_TIME_LAPSE}m"
+done

@@ -33,13 +33,5 @@
 			"type": "view",
 			"path": "webcam/up_server"
 		}
-	},
-	"admin/services/webcam/schedule": {
-		"title": "Schedule",
-		"order": 40,
-		"action": {
-			"type": "view",
-			"path": "webcam/schedule"
-		}
 	}
 }

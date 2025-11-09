@@ -12,6 +12,7 @@ config general 'general'
 
 config shooting 'shooting'
         option photo_name 'raw'
+        option photo_time_lapse '10'
 
 config day 'day'
         option iso_day '0'
