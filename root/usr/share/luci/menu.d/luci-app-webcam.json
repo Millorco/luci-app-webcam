@@ -11,7 +11,7 @@
 		}
 	},
 	"admin/services/webcam/system_setting": {
-		"title": "System Setting",
+		"title": "System",
 		"order": 10,
 		"action": {
 			"type": "view",
@@ -19,7 +19,7 @@
 		}
 	},
 	"admin/services/webcam/camera_setting": {
-		"title": "Camera Setting",
+		"title": "Camera",
 		"order": 20,
 		"action": {
 			"type": "view",
@@ -27,7 +27,7 @@
 		}
 	},
 	"admin/services/webcam/up_server": {
-		"title": "Upload  Server",
+		"title": "Photo Save",
 		"order": 30,
 		"action": {
 			"type": "view",
