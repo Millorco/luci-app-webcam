@@ -1,0 +1,8 @@
+#!/bin/sh
+
+INTERVAL_MINUTES=1
+
+while true; do
+    heartbeat
+    sleep "${INTERVAL_MINUTES}m"
+done
