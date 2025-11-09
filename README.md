@@ -15,12 +15,13 @@ chmod +x install.sh
 
 ### Dependance
 
+The script already installs the dependencies.
+
 ```sh
-opkg update
-opkg install coreutils-stty
-opkg install curl
-opkg install gphoto2
-opkg install libgphoto2-drivers-ptp2
+coreutils-stty
+curl
+gphoto2
+libgphoto2-drivers-ptp2
 ```
 
 # Application structure
