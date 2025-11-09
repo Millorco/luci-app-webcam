@@ -77,8 +77,10 @@ opkg install libgphoto2-drivers-ptp2
 # Service
 
 
-chmod +x webcam_capture
+chmod +x /etc/init.d/webcam_capture
+
 /etc/init.d/webcam_capture enable
+
 /etc/init.d/webcam_capture start
 
 
