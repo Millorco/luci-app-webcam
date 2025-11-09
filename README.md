@@ -75,16 +75,6 @@ libgphoto2-drivers-ptp2
 
 ```
 
-# Service
-
-
-chmod +x /etc/init.d/webcam_capture
-
-/etc/init.d/webcam_capture enable
-
-/etc/init.d/webcam_capture start
-
-
 # Board
 
  - b - Segnale heartbeat 
