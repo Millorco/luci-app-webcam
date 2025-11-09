@@ -1,8 +1,8 @@
 #!/bin/sh
 
-INTERVAL_MINUTES=1
+WC_TIME_LAPSE=`/sbin/uci get webcam.@shooting[0].photo_name`
 
 while true; do
     heartbeat
-    sleep "${INTERVAL_MINUTES}m"
+    sleep "${WC_TIME_LAPSE}m"
 done
