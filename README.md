@@ -83,8 +83,7 @@ opkg install libgphoto2-drivers-ptp2
  - F/f - Ventola ON/OFF 
  - t - Lettura temperatura 
  - u - Lettura umidità 
- - s - Stato completo del sistema 
- - n - Test connessione 
+ - d - Test connessione 
  - r - Reset Pc Camera
 
 # Screenshot
