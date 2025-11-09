@@ -42,9 +42,6 @@ opkg install libgphoto2-drivers-ptp2
 │               ├── iso_data.json
 │               └── shutterspeed_data.json
 ├── Makefile
-├── po
-│   ├── templates
-│       └── example.pot
 │
 ├── README.md
 └── root
