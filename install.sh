@@ -26,6 +26,78 @@ if ! command -v wget >/dev/null 2>&1; then
     exit 1
 fi
 
+# ----------------------------------------------------------
+# Controllo e installazione/aggiornamento pacchetti richiesti
+# ----------------------------------------------------------
+
+REQUIRED_PACKAGES="
+coreutils-stty
+curl
+gphoto2
+libgphoto2-drivers-ptp2
+"
+
+echo ""
+echo -e "${GREEN}Controllo dei pacchetti necessari...${NC}"
+
+# Aggiorno la lista una volta sola
+opkg update >/dev/null 2>&1
+
+for PKG in $REQUIRED_PACKAGES; do
+    INSTALLED_VERSION=$(opkg list-installed "$PKG" 2>/dev/null | awk '{print $3}')
+    REPO_VERSION=$(opkg list "$PKG" 2>/dev/null | awk '{print $3}')
+
+    if [ -n "$INSTALLED_VERSION" ]; then
+        echo -e "${YELLOW}Trovato: ${PKG} (installato: $INSTALLED_VERSION, repo: $REPO_VERSION)${NC}"
+
+        if [ "$INSTALLED_VERSION" = "$REPO_VERSION" ]; then
+            echo "Versione già aggiornata, nessuna azione necessaria."
+            echo ""
+            continue
+        fi
+
+        printf "Aggiornare alla nuova versione? (s/N): "
+        read -r resp
+        case "$resp" in
+            [sS]|[sS][iI]|[yY]|[yY][eE][sS])
+                echo "Aggiorno $PKG..."
+                if opkg install "$PKG" >/dev/null 2>&1; then
+                    echo -e "${GREEN}Aggiornato: $PKG${NC}"
+                else
+                    echo -e "${RED}Errore durante l'aggiornamento di $PKG${NC}"
+                fi
+                ;;
+            *)
+                echo "Mantengo la versione installata di $PKG"
+                ;;
+        esac
+
+    else
+        echo -e "${RED}Pacchetto mancante: $PKG${NC}"
+        printf "Vuoi installarlo? (S/n): "
+        read -r resp
+        case "$resp" in
+            [nN]|[nN][oO])
+                echo "Salto $PKG (non installato)"
+                ;;
+            *)
+                echo "Installazione di $PKG..."
+                if opkg install "$PKG" >/dev/null 2>&1; then
+                    echo -e "${GREEN}Installato: $PKG${NC}"
+                else
+                    echo -e "${RED}Errore durante l'installazione di $PKG${NC}"
+                fi
+                ;;
+        esac
+    fi
+    echo ""
+done
+
+echo -e "${GREEN}Controllo pacchetti completato${NC}"
+echo ""
+
+# ----------------------------------------------------------
+
 # Crea directory temporanea
 mkdir -p "$TEMP_DIR"
 cd "$TEMP_DIR"
@@ -76,30 +148,24 @@ fi
 # 2. File di sistema - root → /
 if [ -d "root" ]; then
     echo "Copio file di sistema (root → /)..."
-    
-    # Copia ricorsivamente mantenendo la struttura delle directory
+
     find root -type f | while read file; do
-        # Rimuove il prefisso "root/" dal percorso
         dest_path="${file#root/}"
         dest_dir=$(dirname "/$dest_path")
-        
-        # Se è il file di configurazione webcam e l'utente non vuole sovrascrivere, salta
+
         if [ "$dest_path" = "etc/config/webcam" ] && [ "$OVERWRITE_CONFIG" -eq 0 ]; then
             echo "  Salto: /$dest_path (configurazione esistente mantenuta)"
             continue
         fi
-        
-        # Crea la directory di destinazione se non esiste
+
         mkdir -p "$dest_dir"
-        
-        # Copia il file
+
         if cp "$file" "/$dest_path" 2>/dev/null; then
             echo "  Copiato: $file → /$dest_path"
-            
-            # Se il file è in /usr/bin/, rendilo eseguibile
+
             if echo "/$dest_path" | grep -q "^/usr/bin/"; then
                 chmod +x "/$dest_path" 2>/dev/null && \
-                    echo "    Render eseguibile: /$dest_path" || \
+                    echo "    Reso eseguibile: /$dest_path" || \
                     echo -e "${YELLOW}    Impossibile rendere eseguibile: /$dest_path${NC}"
             fi
         else
@@ -107,7 +173,6 @@ if [ -d "root" ]; then
         fi
     done
 fi
-
 
 # Pulisce la cache LuCI
 echo "Pulisco la cache LuCI..."
