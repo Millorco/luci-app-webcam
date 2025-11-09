@@ -27,8 +27,6 @@ opkg install libgphoto2-drivers-ptp2
 
 ```
 .
-├── Makefile
-├── README.md
 ├── htdocs
 │   └── luci-static
 │       └── resources
