@@ -3,6 +3,6 @@
 WC_TIME_LAPSE=`/sbin/uci get webcam.@shooting[0].photo_name`
 
 while true; do
-    heartbeat
+    /usr/bin/capture
     sleep "${WC_TIME_LAPSE}m"
 done
