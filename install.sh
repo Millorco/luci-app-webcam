@@ -130,5 +130,22 @@ echo "4. Se necessario, riavvia i servizi: /etc/init.d/webcam restart"
 
 # Pulizia
 rm -rf "$TEMP_DIR"
-
 echo -e "${GREEN}Pulizia file temporanei completata${NC}"
+
+echo ""
+echo -e "${GREEN}Abilitazione del servizio webcam_capture...${NC}"
+
+chmod +x /etc/init.d/webcam_capture 2>/dev/null || \
+    echo -e "${YELLOW}Attenzione: impossibile impostare /etc/init.d/webcam_capture come eseguibile${NC}"
+
+if /etc/init.d/webcam_capture enable 2>/dev/null; then
+    echo "Servizio abilitato all'avvio"
+else
+    echo -e "${RED}Impossibile abilitare il servizio webcam_capture${NC}"
+fi
+
+if /etc/init.d/webcam_capture start 2>/dev/null; then
+    echo "Servizio avviato"
+else
+    echo -e "${RED}Impossibile avviare il servizio webcam_capture${NC}"
+fi
