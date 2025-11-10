@@ -34,7 +34,6 @@ libgphoto2-drivers-ptp2
 │           ├── view
 │           │   └── webcam
 │           │       ├── camera_setting.js
-│           │       ├── schedule.js
 │           │       ├── system_setting.js
 │           │       └── up_server.js
 │           │
@@ -46,8 +45,12 @@ libgphoto2-drivers-ptp2
     ├── etc
     │   ├── config
     │   │   └── webcam
+    │   ├── init.d
+    │   │   └── webcam
     │   └── crontabs
     │       └── root
+    │
+    │
     │
     └── usr
         ├── bin
