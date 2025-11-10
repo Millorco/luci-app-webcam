@@ -15,7 +15,7 @@ while true; do
     case "$WC_TIME_LAPSE" in
         ''|*[!0-9]*)
             log "Invalid or missing 'photo_time_lapse'. Using default: 1 minute."
-            WC_TIME_LAPSE=1
+            WC_TIME_LAPSE=10
             ;;
     esac
 
