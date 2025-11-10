@@ -12,7 +12,11 @@ NOW_DATE="$(date +"%Y%m%d-%H%M")"
 FILENAME="${WC_PHOTO_NAME}_${NOW_DATE}.jpg"
 CIVIL_TWILIGHT_MINUTES=30  # Minuti prima/alba e dopo/tramonto
 
+
+# ---------------------------------------------------
 # Funzione per avviare la cattura in base a giorno/notte
+# ---------------------------------------------------
+
 start() {
 	CURRENT_HOUR=$(date +%s 2>/dev/null)
 
@@ -54,7 +58,9 @@ start() {
 }
 
 
+# ---------------------------------------------------
 # Funzione cattura per giorno
+# ---------------------------------------------------
 capture_day() {
     rm -f ./*.jpg 2>/dev/null
 
@@ -84,7 +90,9 @@ capture_day() {
 }
 
 
+# ---------------------------------------------------
 # Funzione cattura per notte
+# ---------------------------------------------------
 capture_night() {
     rm -f ./*.jpg 2>/dev/null
 
@@ -114,7 +122,9 @@ capture_night() {
 }
 
 
+# ---------------------------------------------------
 # Funzione Upload Foto
+# ---------------------------------------------------
 upload() {
     # Verifica che il file da caricare esista
     if [ ! -f "$FILENAME" ]; then
@@ -145,16 +155,4 @@ upload() {
 }
 
 
-# Check Maintenance Mode
-if [ "${WC_MAINTENANCE_MODE:-0}" -eq 0 ]; then
-    echo "Normal mode - Starting service"
-    start
-else
-    if [ "$1" = "force" ]; then
-        echo "Force Maintenance Mode - Overriding maintenance"
-        start
-    else
-        echo "Maintenance Mode Active - Use 'force' to override"
-        exit 1
-    fi
-fi
+start
