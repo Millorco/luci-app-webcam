@@ -1,7 +1,38 @@
 #!/bin/sh
 
+LOGTAG="webcam-capture"
+
+log() {
+    logger -t "$LOGTAG" "$@"
+}
+
 while true; do
-    WC_TIME_LAPSE=`/sbin/uci get webcam.@shooting[0].photo_time_lapse   `
-    /usr/bin/capture
+    # Read configuration values with fallback defaults
+    WC_TIME_LAPSE="$(uci get webcam.@shooting[0].photo_time_lapse 2>/dev/null)"
+    WC_MAINTENANCE_MODE="$(uci get webcam.@general[0].maintenance_mode 2>/dev/null)"
+
+    # Sanity checks
+    case "$WC_TIME_LAPSE" in
+        ''|*[!0-9]*)
+            log "Invalid or missing 'photo_time_lapse'. Using default: 1 minute."
+            WC_TIME_LAPSE=1
+            ;;
+    esac
+
+    [ -z "$WC_MAINTENANCE_MODE" ] && WC_MAINTENANCE_MODE=0
+
+    # Check maintenance mode
+    if [ "$WC_MAINTENANCE_MODE" -eq 0 ]; then
+        log "Normal mode: starting capture."
+
+        if ! /usr/bin/capture; then
+            log "Capture command failed."
+        fi
+    else
+        log "Maintenance mode active. Capture skipped."
+    fi
+
+    # Sleep interval
+    log "Sleeping ${WC_TIME_LAPSE}m"
     sleep "${WC_TIME_LAPSE}m"
 done
