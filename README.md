@@ -58,6 +58,7 @@ libgphoto2-drivers-ptp2
         │   ├── add_led_config
         │   ├── aperture_export
         │   ├── capture
+        │   ├── capture_service
         │   ├── check_camera_model
         │   ├── heartbeat
         │   ├── iso_export
