@@ -41,16 +41,17 @@ libgphoto2-drivers-ptp2
 │               ├── aperture_data.json
 │               ├── iso_data.json
 │               └── shutterspeed_data.json
+│
 └── root
     ├── etc
     │   ├── config
     │   │   └── webcam
+    │   │
     │   ├── init.d
-    │   │   └── webcam
+    │   │   └── webcam_capture
+    │   │
     │   └── crontabs
     │       └── root
-    │
-    │
     │
     └── usr
         ├── bin
