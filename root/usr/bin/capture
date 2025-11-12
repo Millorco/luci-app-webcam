@@ -49,10 +49,8 @@ start() {
 	fi
 
 	if [ "$CURRENT_HOUR" -ge "$SUNRISE_TS" ] && [ "$CURRENT_HOUR" -lt "$SUNSET_TS" ]; then
-		echo "DAY"
 		capture_day
 	else
-		echo "NIGHT"
 		capture_night
 	fi
 }
