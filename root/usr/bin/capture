@@ -77,7 +77,7 @@ capture_day() {
         --get-all-metadata \
         --capture-image-and-download \
         --force-overwrite \
-        --filename "$FILENAME" 2>&1 | grep -v Property
+		--filename "$FILENAME" 2>&1 1>/dev/null
 
     # Heizung wieder auf vorherigen Stand
     if [ "${WC_HEATING:-0}" -eq 1 ]; then
@@ -109,7 +109,7 @@ capture_night() {
         --get-all-metadata \
         --capture-image-and-download \
         --force-overwrite \
-        --filename "$FILENAME" 2>&1 | grep -v Property
+		--filename "$FILENAME" 2>&1 1>/dev/null
 
     # Heizung wieder auf vorherigen Stand
     if [ "${WC_HEATING:-0}" -eq 1 ]; then
