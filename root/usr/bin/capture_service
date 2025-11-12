@@ -14,7 +14,7 @@ while true; do
     # Sanity checks
     case "$WC_TIME_LAPSE" in
         ''|*[!0-9]*)
-            log "Invalid or missing 'photo_time_lapse'. Using default: 1 minute."
+            log "Invalid or missing 'photo_time_lapse'. Using default: 10 minute."
             WC_TIME_LAPSE=10
             ;;
     esac
@@ -23,7 +23,7 @@ while true; do
 
     # Check maintenance mode
     if [ "$WC_MAINTENANCE_MODE" -eq 0 ]; then
-        log "Normal mode: starting capture."
+        log "Starting capture."
 
         if ! /usr/bin/capture; then
             log "Capture command failed."
@@ -33,6 +33,5 @@ while true; do
     fi
 
     # Sleep interval
-    log "Sleeping ${WC_TIME_LAPSE}m"
     sleep "${WC_TIME_LAPSE}m"
 done
