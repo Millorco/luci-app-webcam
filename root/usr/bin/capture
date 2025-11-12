@@ -137,7 +137,7 @@ upload() {
     echo "curl -T \"$FILENAME\" --user \"$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD\" --ftp-create-dirs \"ftp://$WC_UPLOAD_SERVER/$WC_UPLOAD_DIRECTORY/$FILENAME\""
 
     # Esegue l'upload usando curl (disponibile di default su OpenWrt)
-    curl -T "$FILENAME" \
+    curl -s -S -T "$FILENAME" \
         --user "$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD" \
         --ftp-create-dirs \
         "ftp://$WC_UPLOAD_SERVER/$WC_UPLOAD_DIRECTORY/$FILENAME"
