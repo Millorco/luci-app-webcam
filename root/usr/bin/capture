@@ -121,7 +121,7 @@ capture_night() {
 
 
 # ---------------------------------------------------
-# Funzione Upload Foto
+# Upload to FTP server
 # ---------------------------------------------------
 upload() {
     # Verifica che il file da caricare esista
@@ -130,17 +130,19 @@ upload() {
         exit 1
     fi
 
-    echo "Inizio upload del file '$FILENAME' su server FTP..."
-    echo "Server: $WC_UPLOAD_SERVER"
-    echo "Directory remota: $WC_UPLOAD_DIRECTORY"
+    # Crea struttura cartelle basata sulla data corrente
+    YEAR=$(date +"%Y")
+    MONTH=$(date +"%m")
+    DAY=$(date +"%d")
 
-    echo "curl -T \"$FILENAME\" --user \"$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD\" --ftp-create-dirs \"ftp://$WC_UPLOAD_SERVER/$WC_UPLOAD_DIRECTORY/$FILENAME\""
+    # Costruisce il percorso remoto
+    REMOTE_PATH="$WC_UPLOAD_DIRECTORY/$YEAR/$MONTH/$DAY"
 
-    # Esegue l'upload usando curl (disponibile di default su OpenWrt)
+    # Esegue l'upload creando automaticamente le directory
     curl -s -S -T "$FILENAME" \
         --user "$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD" \
         --ftp-create-dirs \
-        "ftp://$WC_UPLOAD_SERVER/$WC_UPLOAD_DIRECTORY/$FILENAME"
+        "ftp://$WC_UPLOAD_SERVER/$REMOTE_PATH/$FILENAME"
 
     # Controlla il risultato dell'operazione
     if [ $? -eq 0 ]; then
@@ -151,6 +153,8 @@ upload() {
         exit 1
     fi
 }
+
+
 
 
 start
