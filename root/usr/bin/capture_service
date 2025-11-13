@@ -29,7 +29,7 @@ while true; do
             log "Capture command failed."
         fi
     else
-        log "Maintenance mode active. Capture skipped."
+        log "Maintenance active."
     fi
 
     # Sleep interval
