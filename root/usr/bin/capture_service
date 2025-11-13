@@ -1,8 +1,6 @@
 #!/bin/sh
 
-$WC_NAMEE="$(uci get webcam.@general[0].maintenance_mode 2>/dev/null)"
-
-$WC_NAME
+$WC_NAME="$(uci get system.@system[0].hostname 2>/dev/null)"
 
 LOGTAG="$WC_NAME capture"
 
