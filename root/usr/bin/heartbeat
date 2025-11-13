@@ -2,7 +2,7 @@
 
 . /usr/bin/webcam.cfg
 
-HEARTBEAT_SIGNAL='b' # Esempio: un byte ACK. Sostituisci con il tuo segnale desiderato
+HEARTBEAT_SIGNAL='b'
 
 # Configura la porta seriale
 # Reindirizza l'output di errore di stty a /dev/null per evitare messaggi inutili nei log
