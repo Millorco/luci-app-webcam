@@ -1,6 +1,10 @@
 #!/bin/sh
 
-LOGTAG="webcam-capture"
+$WC_NAMEE="$(uci get webcam.@general[0].maintenance_mode 2>/dev/null)"
+
+$WC_NAME
+
+LOGTAG="$WC_NAME capture"
 
 log() {
     logger -t "$LOGTAG" "$@"
