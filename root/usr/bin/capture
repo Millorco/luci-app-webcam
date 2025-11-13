@@ -21,7 +21,7 @@ start() {
 	CURRENT_HOUR=$(date +%s 2>/dev/null)
 
 	if [ -z "$CURRENT_HOUR" ]; then
-		echo "ERRORE: Impossibile ottenere l'ora UNIX corrente. Assicurati che 'date +%s' sia supportato."
+		echo "$WC_NAME ERRORE: Impossibile ottenere l'ora UNIX corrente. Assicurati che 'date +%s' sia supportato."
 		exit 1
 	fi
 
