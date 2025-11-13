@@ -67,8 +67,6 @@ capture_day() {
         . /usr/bin/serialsend h
     fi
 
-    echo "$WC_NAME $NOW_DATE: Capture image (DAY mode)..."
-
     gphoto2 --set-config eosremoterelease=3 \
         --set-config eosremoterelease=4 \
         --set-config iso="$WC_ISO_DAY" \
@@ -98,8 +96,6 @@ capture_night() {
     if [ "${WC_HEATING:-0}" -eq 1 ]; then
         . /usr/bin/serialsend h
     fi
-
-    echo "$WC_NAME $NOW_DATE: Capture image (NIGHT mode)..."
 
     gphoto2 --set-config eosremoterelease=3 \
         --set-config eosremoterelease=4 \
@@ -146,10 +142,10 @@ upload() {
 
     # Controlla il risultato dell'operazione
     if [ $? -eq 0 ]; then
-        echo "Upload completato con successo!"
+        echo "$WC_NAME Upload completato con successo!"
         exit 0
     else
-        echo "Errore durante l'upload del file"
+        echo "$WC_NAME Errore durante l'upload del file"
         exit 1
     fi
 }
