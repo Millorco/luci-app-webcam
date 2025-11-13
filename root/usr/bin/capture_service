@@ -25,7 +25,6 @@ while true; do
 
     # Check maintenance mode
     if [ "$WC_MAINTENANCE_MODE" -eq 0 ]; then
-        log "Starting capture."
 
         if ! /usr/bin/capture; then
             log "Capture command failed."
