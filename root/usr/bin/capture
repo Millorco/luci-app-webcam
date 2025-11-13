@@ -44,7 +44,6 @@ start() {
 
 	if [ -z "$SUNRISE_TS" ] || [ -z "$SUNSET_TS" ]; then
 		echo "ERRORE CRITICO: Il comando 'date -d' non è riuscito a convertire gli orari UTC in secondi UNIX."
-		echo "Questo accade spesso su sistemi minimali senza estensioni 'date' avanzate."
 		exit 1
 	fi
 
@@ -66,8 +65,6 @@ capture_day() {
     if [ "${WC_HEATING:-0}" -eq 1 ]; then
         . /usr/bin/serialsend h
     fi
-
-    echo "$WC_NAME $NOW_DATE: Capture image (DAY mode)..."
 
     gphoto2 --set-config eosremoterelease=3 \
         --set-config eosremoterelease=4 \
@@ -99,7 +96,6 @@ capture_night() {
         . /usr/bin/serialsend h
     fi
 
-    echo "$WC_NAME $NOW_DATE: Capture image (NIGHT mode)..."
 
     gphoto2 --set-config eosremoterelease=3 \
         --set-config eosremoterelease=4 \
@@ -129,12 +125,6 @@ upload() {
         echo "Errore: Il file '$FILENAME' non esiste"
         exit 1
     fi
-
-    echo "Inizio upload del file '$FILENAME' su server FTP..."
-    echo "Server: $WC_UPLOAD_SERVER"
-    echo "Directory remota: $WC_UPLOAD_DIRECTORY"
-
-    echo "curl -T \"$FILENAME\" --user \"$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD\" --ftp-create-dirs \"ftp://$WC_UPLOAD_SERVER/$WC_UPLOAD_DIRECTORY/$FILENAME\""
 
     # Esegue l'upload usando curl (disponibile di default su OpenWrt)
     curl -s -S -T "$FILENAME" \
