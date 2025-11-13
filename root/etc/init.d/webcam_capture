@@ -1,5 +1,5 @@
 #!/bin/sh /etc/rc.common
-# Webcam start Capture Service
+# Webcam Capture Service
 
 START=90
 USE_PROCD=1
