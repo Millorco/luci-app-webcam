@@ -1,10 +1,13 @@
 #!/bin/sh
 
-LOGTAG="webcam-capture"
+WC_NAME="$(uci get system.@system[0].hostname 2>/dev/null)"
+
+LOGTAG="$WC_NAME"
 
 log() {
     logger -t "$LOGTAG" "$@"
 }
+
 
 while true; do
     # Read configuration values with fallback defaults
