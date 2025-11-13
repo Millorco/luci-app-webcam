@@ -1,6 +1,6 @@
 ## Heartbeat PING ##
 ##
 ## DO NOT CHANGE THIS SETTING ##
-*/3 * * * * /usr/bin/heartbeat
+*/3 * * * * /usr/bin/heartbeat > /dev/null 2>&1
 ## DO NOT CHANGE THIS SETTING ##
 ##
