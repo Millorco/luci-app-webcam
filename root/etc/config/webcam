@@ -7,7 +7,7 @@ config general 'general'
         option longitude '12.464880'
         option temp_scale 'c'
         option heating '0'
-        option serial_port '/dev/ttyS0'
+        option serial_port '/dev/ttyS1'
         option baud_rates '9600'
 
 config shooting 'shooting'
