@@ -1,0 +1,108 @@
+#!/bin/sh
+# ---------------------------------------------------
+# Comunicazione seriale con la scheda relè/sensore.
+#
+# Uso:
+#   serial send  <comando>   invia un comando (es. b, C, c, H, h, F, f)
+#   serial query <comando>   invia un comando e stampa la risposta (es. t, u, d)
+#
+# Il firmware legge i comandi con readString(), che attende 1 secondo
+# dopo l'ultimo carattere ricevuto: due comandi ravvicinati verrebbero
+# uniti (es. "bh") e ignorati. Per questo ogni accesso alla porta è
+# serializzato con un lock e seguito da una pausa di SERIAL_GAP secondi.
+# ---------------------------------------------------
+
+. /usr/bin/webcam.cfg
+
+SERIAL_GAP=2          # secondi tra un comando e il successivo
+QUERY_WAIT=3          # secondi di attesa della risposta
+LOCK_DIR=/var/lock/webcam_serial.lock
+LOCK_STALE=60         # un lock più vecchio di così è considerato orfano
+
+ACTION="$1"
+CMD="$2"
+
+usage() {
+	echo "Uso: $0 send|query <comando>" >&2
+	exit 2
+}
+
+[ -n "$CMD" ] || usage
+
+lock() {
+	local waited=0
+	while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+		# Rimuove lock rimasti da processi terminati in modo anomalo
+		if [ -d "$LOCK_DIR" ] && [ $(( $(date +%s) - $(date -r "$LOCK_DIR" +%s 2>/dev/null || echo 0) )) -gt "$LOCK_STALE" ]; then
+			rmdir "$LOCK_DIR" 2>/dev/null
+			continue
+		fi
+		sleep 1
+		waited=$((waited + 1))
+		if [ "$waited" -ge "$LOCK_STALE" ]; then
+			echo "Errore: porta seriale occupata" >&2
+			exit 1
+		fi
+	done
+	trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT INT TERM
+}
+
+setup_port() {
+	if [ ! -c "$WC_SERIAL_PORT" ]; then
+		echo "Errore: porta seriale $WC_SERIAL_PORT non trovata" >&2
+		exit 1
+	fi
+	stty -F "$WC_SERIAL_PORT" "$WC_BAUD_RATES" cs8 -parenb -cstopb -crtscts \
+		-ixon -ixoff -hupcl raw -echo 2>/dev/null || {
+		echo "Errore: impossibile configurare la porta seriale $WC_SERIAL_PORT" >&2
+		exit 1
+	}
+}
+
+send() {
+	printf '%s' "$CMD" > "$WC_SERIAL_PORT" || {
+		echo "Errore: impossibile inviare '$CMD' su $WC_SERIAL_PORT" >&2
+		exit 1
+	}
+}
+
+lock
+setup_port
+
+case "$ACTION" in
+	send)
+		send
+		sleep "$SERIAL_GAP"
+		;;
+	query)
+		TMP=$(mktemp /tmp/webcam_serial.XXXXXX)
+		# Avvia la lettura prima di inviare il comando, così la risposta
+		# non va persa; i dati residui eventualmente letti vengono filtrati.
+		cat "$WC_SERIAL_PORT" >> "$TMP" 2>/dev/null &
+		CAT_PID=$!
+		sleep 1   # lascia passare eventuali dati residui, poi li scarta
+		: > "$TMP"
+		send
+		sleep "$QUERY_WAIT"
+		kill "$CAT_PID" 2>/dev/null
+		wait "$CAT_PID" 2>/dev/null
+		RESPONSE=$(tr -d '\r' < "$TMP" | tr '\n' ' ')
+		rm -f "$TMP"
+		case "$CMD" in
+			t|u)
+				# Il firmware risponde con un numero con un decimale (es. 21.4)
+				VALUE=$(echo "$RESPONSE" | grep -oE -- '-?[0-9]+\.[0-9]+' | tail -n 1)
+				[ -n "$VALUE" ] || { echo "Errore: nessuna risposta valida a '$CMD'" >&2; exit 1; }
+				echo "$VALUE"
+				;;
+			*)
+				echo "$RESPONSE"
+				;;
+		esac
+		;;
+	*)
+		usage
+		;;
+esac
+
+exit 0

@@ -4,10 +4,20 @@
 		"order": 50,
 		"action": {
 			"type": "alias",
-			"path": "admin/services/webcam/system_setting"
+			"path": "admin/services/webcam/status"
 		},
 		"depends": {
-			"acl": [ "luci-app-webcam" ]
+			"acl": [
+				"luci-app-webcam"
+			]
+		}
+	},
+	"admin/services/webcam/status": {
+		"title": "Status",
+		"order": 5,
+		"action": {
+			"type": "view",
+			"path": "webcam/status"
 		}
 	},
 	"admin/services/webcam/system_setting": {

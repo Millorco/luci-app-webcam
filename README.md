@@ -34,6 +34,7 @@ libgphoto2-drivers-ptp2
 │           ├── view
 │           │   └── webcam
 │           │       ├── camera_setting.js
+│           │       ├── status.js
 │           │       ├── system_setting.js
 │           │       └── up_server.js
 │           │
@@ -47,11 +48,8 @@ libgphoto2-drivers-ptp2
     │   ├── config
     │   │   └── webcam
     │   │
-    │   ├── init.d
-    │   │   └── webcam_capture
-    │   │
-    │   └── crontabs
-    │       └── root
+    │   └── init.d
+    │       └── webcam_capture   (aggiunge anche i job cron heartbeat/climate)
     │
     └── usr
         ├── bin
@@ -60,14 +58,19 @@ libgphoto2-drivers-ptp2
         │   ├── capture
         │   ├── capture_service
         │   ├── check_camera_model
+        │   ├── climate
         │   ├── heartbeat
         │   ├── iso_export
         │   ├── read_temp
         │   ├── serialsend
         │   ├── shutterspeed_export
-        │   ├── test_serial
         │   └── webcam.cfg
-        │ 
+        │
+        ├── libexec
+        │   └── webcam
+        │       ├── serial      (accesso seriale con lock e pausa tra comandi)
+        │       └── sun_times   (calcolo locale di alba e tramonto)
+        │
         └── share
             ├── luci
             │   └── menu.d
@@ -80,6 +83,13 @@ libgphoto2-drivers-ptp2
 
 ```
 
+# Funzionamento
+
+- **Scatto**: `capture_service` esegue `capture` ogni `photo_time_lapse` minuti. Giorno e notte sono decisi calcolando alba e tramonto in locale dalle coordinate (nessuna API esterna). ISO, diaframma e tempo sono salvati come indici delle scelte di gphoto2 e applicati con `--set-config-index`.
+- **Anti-appannamento**: `climate` (cron, ogni 5 minuti) legge temperatura e umidità dall'SHT31, calcola il punto di rugiada e accende riscaldamento e ventola quando la temperatura è vicina al punto di rugiada o sotto la soglia minima. Durante lo scatto il riscaldamento viene spento e poi ripristinato.
+- **Upload**: FTP, FTPS (FTP su TLS) o SFTP (richiede curl con supporto SSH, verificabile con `curl -V`).
+- **Stato**: la pagina *Servizi → Webcam → Status* mostra temperatura, umidità, punto di rugiada, stato del riscaldamento e ultimo scatto.
+
 # Board
 
  - b - Segnale heartbeat 
@@ -91,6 +101,8 @@ libgphoto2-drivers-ptp2
  - u - Lettura umidità 
  - d - Test connessione 
  - r - Reset Pc Camera
+
+Il firmware legge un comando con `readString()`, che attende 1 secondo dopo l'ultimo carattere: per questo tutti gli script passano da `/usr/libexec/webcam/serial`, che serializza gli accessi e lascia 2 secondi tra un comando e l'altro.
 
 # Screenshot
 
