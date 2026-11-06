@@ -1,7 +1,6 @@
-# App to controlla a reflex whith gPhoto2
+# luci-app-webcam
 
-This app is meant to be a starting point for developing new LuCI apps using the modern JavaScript client-rendered approach.
-Previously the LuCI used a Lua server-side render approach which is deprecated now.
+App LuCI per OpenWrt che trasforma un router (es. GL.iNet GL-MT300N-V2) in una webcam time-lapse: scatta con una reflex Canon EOS collegata via USB tramite gPhoto2, usa impostazioni diverse per giorno e notte e carica le foto via FTP/FTPS/SFTP. Una scheda con ATmega328P collegata in seriale gestisce i relè (fotocamera, router, riscaldamento, ventola), il sensore di temperatura/umidità SHT3x per l'anti-appannamento del vetro e un watchdog che riavvia il router se si blocca.
 
 ## Installation
 
@@ -34,6 +33,7 @@ libgphoto2-drivers-ptp2
 │           ├── view
 │           │   └── webcam
 │           │       ├── camera_setting.js
+│           │       ├── status.js
 │           │       ├── system_setting.js
 │           │       └── up_server.js
 │           │
@@ -47,11 +47,8 @@ libgphoto2-drivers-ptp2
     │   ├── config
     │   │   └── webcam
     │   │
-    │   ├── init.d
-    │   │   └── webcam_capture
-    │   │
-    │   └── crontabs
-    │       └── root
+    │   └── init.d
+    │       └── webcam_capture   (aggiunge anche i job cron heartbeat/climate)
     │
     └── usr
         ├── bin
@@ -60,14 +57,19 @@ libgphoto2-drivers-ptp2
         │   ├── capture
         │   ├── capture_service
         │   ├── check_camera_model
+        │   ├── climate
         │   ├── heartbeat
         │   ├── iso_export
         │   ├── read_temp
         │   ├── serialsend
         │   ├── shutterspeed_export
-        │   ├── test_serial
         │   └── webcam.cfg
-        │ 
+        │
+        ├── libexec
+        │   └── webcam
+        │       ├── serial      (accesso seriale con lock e pausa tra comandi)
+        │       └── sun_times   (calcolo locale di alba e tramonto)
+        │
         └── share
             ├── luci
             │   └── menu.d
@@ -80,6 +82,13 @@ libgphoto2-drivers-ptp2
 
 ```
 
+# Funzionamento
+
+- **Scatto**: `capture_service` esegue `capture` ogni `photo_time_lapse` minuti. Giorno e notte sono decisi calcolando alba e tramonto in locale dalle coordinate (nessuna API esterna). ISO, diaframma e tempo sono salvati come indici delle scelte di gphoto2 e applicati con `--set-config-index`.
+- **Anti-appannamento**: `climate` (cron, ogni 5 minuti) legge temperatura e umidità dall'SHT31, calcola il punto di rugiada e accende riscaldamento e ventola quando la temperatura è vicina al punto di rugiada o sotto la soglia minima. Durante lo scatto il riscaldamento viene spento e poi ripristinato.
+- **Upload**: FTP, FTPS (FTP su TLS) o SFTP (richiede curl con supporto SSH, verificabile con `curl -V`).
+- **Stato**: la pagina *Servizi → Webcam → Status* mostra temperatura, umidità, punto di rugiada, stato del riscaldamento e ultimo scatto.
+
 # Board
 
  - b - Segnale heartbeat 
@@ -91,6 +100,27 @@ libgphoto2-drivers-ptp2
  - u - Lettura umidità 
  - d - Test connessione 
  - r - Reset Pc Camera
+ - s - Stato su una riga (relè, sensore, heartbeat, uptime, numero di cicli di alimentazione)
+ - v - Versione firmware
+ - ? - Elenco comandi
+ - i - (solo da FTDI) scansione del bus I2C
+ - w / W - (solo da FTDI) sospende per 60 minuti / riattiva il watchdog dell'heartbeat, per le prove al banco
+
+Per sicurezza riscaldamento e ventola si spengono da soli se il router non ripete `H`/`F` entro 20 minuti (`climate` li reinvia ogni 5 minuti).
+
+## Firmware della scheda (`board.ino`)
+
+Compilazione con Arduino IDE: scheda **Arduino Uno** (ATmega328P a 16 MHz), libreria **Adafruit SHT31** (con la dipendenza Adafruit BusIO).
+
+Se il chip è nuovo o non risponde, va prima caricato il bootloader tramite il connettore **ICSP** (USBasp o un Arduino usato come ISP, comando *Strumenti → Scrivi il bootloader* con scheda Arduino Uno). Poi lo sketch si carica dal connettore FTDI.
+
+Connettore FTDI della scheda: 1 GND, 2 TX (va all'RXD dell'adattatore), 3 RX (va al TXD dell'adattatore), 4 5V, 5 DTR.
+
+### Debug
+
+Aprendo il monitor seriale sul connettore FTDI a **9600 baud** (senza fine riga) la scheda stampa all'avvio la versione, la causa del reset (accensione, DTR, brown-out, watchdog), lo stato delle linee SDA/SCL, la scansione del bus I2C e lo stato del sensore. Poi registra con timestamp ogni comando ricevuto dal router e ogni cambio dei relè, e ogni minuto stampa una riga di stato. Gli stessi comandi del router si possono digitare dal monitor seriale.
+
+Il firmware legge un comando con `readString()`, che attende 1 secondo dopo l'ultimo carattere: per questo tutti gli script passano da `/usr/libexec/webcam/serial`, che serializza gli accessi e lascia 2 secondi tra un comando e l'altro.
 
 # Screenshot
 

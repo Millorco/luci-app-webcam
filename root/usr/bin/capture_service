@@ -1,8 +1,7 @@
 #!/bin/sh
 
-$WC_NAME="$(uci get system.@system[0].hostname 2>/dev/null)"
-
-LOGTAG="$WC_NAME capture"
+WC_NAME="$(uci -q get system.@system[0].hostname)"
+LOGTAG="${WC_NAME:-webcam} capture"
 
 log() {
     logger -t "$LOGTAG" "$@"
@@ -10,22 +9,23 @@ log() {
 
 while true; do
     # Read configuration values with fallback defaults
-    WC_TIME_LAPSE="$(uci get webcam.@shooting[0].photo_time_lapse 2>/dev/null)"
-    WC_MAINTENANCE_MODE="$(uci get webcam.@general[0].maintenance_mode 2>/dev/null)"
+    WC_TIME_LAPSE="$(uci -q get webcam.@shooting[0].photo_time_lapse)"
+    WC_MAINTENANCE_MODE="$(uci -q get webcam.@general[0].maintenance_mode)"
 
     # Sanity checks
     case "$WC_TIME_LAPSE" in
-        ''|*[!0-9]*)
-            log "Invalid or missing 'photo_time_lapse'. Using default: 10 minute."
+        ''|*[!0-9]*|0)
+            log "Invalid or missing 'photo_time_lapse'. Using default: 10 minutes."
             WC_TIME_LAPSE=10
             ;;
     esac
 
     [ -z "$WC_MAINTENANCE_MODE" ] && WC_MAINTENANCE_MODE=0
 
+    START=$(date +%s)
+
     # Check maintenance mode
     if [ "$WC_MAINTENANCE_MODE" -eq 0 ]; then
-
         if ! /usr/bin/capture; then
             log "Capture command failed."
         fi
@@ -33,6 +33,9 @@ while true; do
         log "Maintenance mode active."
     fi
 
-    # Sleep interval
-    sleep "${WC_TIME_LAPSE}m"
+    # Sleep for the rest of the interval, so the shot duration doesn't add up
+    ELAPSED=$(( $(date +%s) - START ))
+    REMAINING=$(( WC_TIME_LAPSE * 60 - ELAPSED ))
+    [ "$REMAINING" -lt 10 ] && REMAINING=10
+    sleep "$REMAINING"
 done

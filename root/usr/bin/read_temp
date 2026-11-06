@@ -1,26 +1,8 @@
 #!/bin/sh
+# Legge temperatura (°C) e umidità (%) dal sensore SHT31 tramite la scheda.
 
-. /usr/bin/webcam.cfg
+TEMP=$(/usr/libexec/webcam/serial query t) || exit 1
+HUM=$(/usr/libexec/webcam/serial query u) || exit 1
 
-# Invia il comando 't' per richiedere la temperatura e legge la risposta
-{
-  # Imposta i parametri seriali
-  stty -F "$WC_SERIAL_PORT" $WC_BAUD_RATES cs8 -cstopb -parenb -ixon -ixoff -crtscts raw
-
-  # Svuota eventuali dati residui
-  cat < "$WC_SERIAL_PORT" & CAT_PID=$!
-  sleep 1
-  kill $CAT_PID
-  wait $CAT_PID 2>/dev/null
-
-  # Invia il comando per leggere la temperatura
-  echo -n "t" > "$WC_SERIAL_PORT"
-
-  # Leggi la risposta (timeout 2 secondi)
-  TEMP=$(dd if="$WC_SERIAL_PORT" bs=1 count=16 iflag=fullblock,nonblock 2>/dev/null | tr -d '\r\n' | head -n 1)
-
-  echo "Temperatura SHT31: $TEMP °C"
-} || {
-  echo "Errore nella comunicazione seriale"
-  exit 1
-}
+echo "Temperatura: $TEMP °C"
+echo "Umidità: $HUM %"

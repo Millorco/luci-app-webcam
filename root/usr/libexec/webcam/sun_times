@@ -1,0 +1,48 @@
+#!/bin/sh
+# ---------------------------------------------------
+# Calcola alba e tramonto in locale (nessuna connessione richiesta).
+#
+# Uso: sun_times <latitudine> <longitudine> [timestamp_unix]
+# Stampa: "<alba_unix> <tramonto_unix>" (UTC, secondi)
+#   "polar_day"   se il sole non tramonta
+#   "polar_night" se il sole non sorge
+#
+# Algoritmo: "Sunrise equation" (precisione ~1-2 minuti).
+# ---------------------------------------------------
+
+LAT="$1"
+LON="$2"
+NOW="${3:-$(date +%s)}"
+
+[ -z "$LAT" ] || [ -z "$LON" ] && {
+	echo "Uso: $0 <lat> <lon> [unix_time]" >&2
+	exit 1
+}
+
+awk -v lat="$LAT" -v lon="$LON" -v now="$NOW" '
+function fmod(a, b) { return a - b * int(a / b) }
+function acos(x) { return atan2(sqrt(1 - x * x), x) }
+BEGIN {
+	pi  = atan2(0, -1)
+	rad = pi / 180
+
+	# Giorno giuliano corrente, poi giorno solare centrato sulla longitudine
+	jd = now / 86400 + 2440587.5
+	n  = int(jd - 2451545.0 + 0.0008 + lon / 360 + 0.5)
+
+	js = n - lon / 360
+	m  = fmod(357.5291 + 0.98560028 * js, 360)
+	c  = 1.9148 * sin(m * rad) + 0.02 * sin(2 * m * rad) + 0.0003 * sin(3 * m * rad)
+	l  = fmod(m + c + 180 + 102.9372, 360)
+	jt = 2451545.0 + js + 0.0053 * sin(m * rad) - 0.0069 * sin(2 * l * rad)
+
+	sd = sin(l * rad) * sin(23.4397 * rad)
+	cd = sqrt(1 - sd * sd)
+	cw = (sin(-0.833 * rad) - sin(lat * rad) * sd) / (cos(lat * rad) * cd)
+
+	if (cw > 1)  { print "polar_night"; exit }
+	if (cw < -1) { print "polar_day";   exit }
+
+	w = acos(cw) / rad
+	printf "%d %d\n", (jt - w / 360 - 2440587.5) * 86400, (jt + w / 360 - 2440587.5) * 86400
+}'

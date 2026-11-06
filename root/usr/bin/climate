@@ -1,0 +1,99 @@
+#!/bin/sh
+# ---------------------------------------------------
+# Anti-appannamento / anti-brina del vetro del case.
+#
+# Legge temperatura e umidità dall'SHT31, calcola il punto di rugiada e
+# accende il riscaldamento (e la ventola) quando:
+#   - la temperatura è a meno di DEWPOINT_MARGIN °C dal punto di rugiada, oppure
+#   - la temperatura è sotto MIN_TEMP °C (rischio brina).
+# Lo spegne quando entrambe le condizioni sono rientrate di HYSTERESIS °C.
+#
+# Scrive lo stato in /tmp/webcam/status.json (pagina Status di LuCI).
+# Eseguito da cron ogni 5 minuti.
+# ---------------------------------------------------
+
+. /usr/bin/webcam.cfg
+
+SERIAL=/usr/libexec/webcam/serial
+STATE_FILE="$WC_STATE_DIR/heater"       # 1 = acceso, 0 = spento
+CAPTURE_FLAG="$WC_STATE_DIR/capturing"  # presente durante uno scatto
+STATUS_JSON="$WC_STATE_DIR/status.json"
+
+mkdir -p "$WC_STATE_DIR"
+
+log() { logger -t "$WC_NAME climate" "$@"; }
+
+HEATER="$(cat "$STATE_FILE" 2>/dev/null)"
+[ "$HEATER" = 1 ] || HEATER=0
+
+set_heater() {
+	if [ "$1" = 1 ]; then
+		$SERIAL send H
+		[ "$WC_HEAT_FAN" = 1 ] && $SERIAL send F
+	else
+		$SERIAL send h
+		[ "$WC_HEAT_FAN" = 1 ] && $SERIAL send f
+	fi
+	echo "$1" > "$STATE_FILE"
+	HEATER="$1"
+}
+
+TEMP="$($SERIAL query t 2>/dev/null)"
+HUM="$($SERIAL query u 2>/dev/null)"
+
+SENSOR_OK=1
+DEWPOINT=""
+if [ -z "$TEMP" ] || [ -z "$HUM" ]; then
+	SENSOR_OK=0
+	log "Lettura del sensore fallita: riscaldamento lasciato invariato."
+else
+	# Formula di Magnus
+	DEWPOINT=$(awk -v t="$TEMP" -v h="$HUM" 'BEGIN {
+		if (h < 1) h = 1
+		g = log(h / 100) + 17.62 * t / (243.12 + t)
+		printf "%.1f", 243.12 * g / (17.62 - g)
+	}')
+fi
+
+DECISION="$HEATER"
+if [ "$SENSOR_OK" = 1 ] && [ "$WC_HEATING" = 1 ]; then
+	DECISION=$(awk -v t="$TEMP" -v dp="$DEWPOINT" -v cur="$HEATER" \
+		-v margin="$WC_HEAT_DEWPOINT_MARGIN" -v hyst="$WC_HEAT_HYSTERESIS" \
+		-v tmin="$WC_HEAT_MIN_TEMP" 'BEGIN {
+		spread = t - dp
+		if (spread < margin || t < tmin) { print 1; exit }
+		if (cur == 1 && (spread < margin + hyst || t < tmin + hyst)) { print 1; exit }
+		print 0
+	}')
+elif [ "$WC_HEATING" != 1 ]; then
+	DECISION=0
+fi
+
+# Durante uno scatto il riscaldamento è spento di proposito: non toccarlo,
+# a meno che il flag sia rimasto orfano (più vecchio di 15 minuti).
+if [ -f "$CAPTURE_FLAG" ] && [ $(( $(date +%s) - $(date -r "$CAPTURE_FLAG" +%s) )) -lt 900 ]; then
+	[ "$DECISION" != "$HEATER" ] && echo "$DECISION" > "$STATE_FILE"
+	HEATER="$DECISION"
+else
+	# Il comando viene reinviato sempre: così lo stato reale dei relè
+	# torna allineato anche dopo un riavvio del router o della scheda.
+	PREV="$HEATER"
+	set_heater "$DECISION"
+	[ "$DECISION" != "$PREV" ] && \
+		log "Riscaldamento $( [ "$DECISION" = 1 ] && echo ACCESO || echo SPENTO ) (T=${TEMP} RH=${HUM} Td=${DEWPOINT})"
+fi
+
+num() { [ -n "$1" ] && echo "$1" || echo null; }
+
+cat > "$STATUS_JSON.tmp" <<JSON
+{
+  "time": $(date +%s),
+  "sensor_ok": $( [ "$SENSOR_OK" = 1 ] && echo true || echo false ),
+  "temperature": $(num "$TEMP"),
+  "humidity": $(num "$HUM"),
+  "dewpoint": $(num "$DEWPOINT"),
+  "heating_enabled": $( [ "$WC_HEATING" = 1 ] && echo true || echo false ),
+  "heater": $( [ "$HEATER" = 1 ] && echo true || echo false )
+}
+JSON
+mv "$STATUS_JSON.tmp" "$STATUS_JSON"

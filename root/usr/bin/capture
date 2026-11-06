@@ -1,146 +1,221 @@
 #!/bin/sh
 # ---------------------------------------------------
 #
-# Capture image with EOS camera
+# Scatto con fotocamera Canon EOS tramite gphoto2 e upload della foto
 #
 # ---------------------------------------------------
 
 . /usr/bin/webcam.cfg
 
-cd /tmp
+SERIAL=/usr/libexec/webcam/serial
+CAPTURE_FLAG="$WC_STATE_DIR/capturing"
+HEATER_STATE="$WC_STATE_DIR/heater"
+CAPTURE_JSON="$WC_STATE_DIR/capture.json"
+WORK_DIR=/tmp/webcam/photo
+
+mkdir -p "$WORK_DIR"
+cd "$WORK_DIR" || exit 1
+
 NOW_DATE="$(date +"%Y%m%d-%H%M")"
 FILENAME="${WC_PHOTO_NAME}_${NOW_DATE}.jpg"
-CIVIL_TWILIGHT_MINUTES=30  # Minuti prima/alba e dopo/tramonto
+MODE=""
 
+log() {
+	echo "$@" >&2
+	logger -t "$WC_NAME capture" "$@"
+}
+
+write_status() {
+	cat > "$CAPTURE_JSON.tmp" <<JSON
+{
+  "time": $(date +%s),
+  "mode": "$MODE",
+  "file": "$FILENAME",
+  "result": "$1"
+}
+JSON
+	mv "$CAPTURE_JSON.tmp" "$CAPTURE_JSON"
+}
+
+fail() {
+	log "ERRORE: $1"
+	write_status "$1"
+	exit 1
+}
 
 # ---------------------------------------------------
-# Funzione per avviare la cattura in base a giorno/notte
+# Giorno o notte? Alba e tramonto sono calcolati in locale
+# dalle coordinate, senza dipendere da servizi esterni.
 # ---------------------------------------------------
+day_or_night() {
+	local now sun sunrise sunset
+	now=$(date +%s)
 
-start() {
-	CURRENT_HOUR=$(date +%s 2>/dev/null)
-
-	if [ -z "$CURRENT_HOUR" ]; then
-		echo "ERRORE: Impossibile ottenere l'ora UNIX corrente."
-		exit 1
+	if [ -z "$WC_LATITUDE" ] || [ -z "$WC_LONGITUDE" ]; then
+		log "Coordinate non impostate: uso le impostazioni diurne."
+		echo day
+		return
 	fi
 
-	JSON_DATA=$(curl -s "https://api.sunrise-sunset.org/json?lat=$WC_LATITUDE&lng=$WC_LONGITUDE&formatted=0")
+	sun=$(/usr/libexec/webcam/sun_times "$WC_LATITUDE" "$WC_LONGITUDE" "$now")
+	case "$sun" in
+		polar_day)   echo day;   return ;;
+		polar_night) echo night; return ;;
+	esac
 
-	SUNRISE_UTC=$(echo "$JSON_DATA" | grep '"sunrise"' | sed -n 's/.*"sunrise":"\([^"]*\)".*/\1/p')
-	SUNSET_UTC=$(echo "$JSON_DATA" | grep '"sunset"' | sed -n 's/.*"sunset":"\([^"]*\)".*/\1/p')
+	sunrise=${sun% *}
+	sunset=${sun#* }
+	case "$sunrise$sunset" in
+		''|*[!0-9]*)
+			log "Calcolo alba/tramonto fallito ('$sun'): uso le impostazioni diurne."
+			echo day
+			return
+			;;
+	esac
 
-	if [ -z "$SUNRISE_UTC" ] || [ -z "$SUNSET_UTC" ]; then
-		echo "ERRORE: Estrazione dei valori dall'API fallita."
-		echo "Risposta API: $JSON_DATA"
-		exit 1
-	fi
-
-	SUNRISE_FMT=$(echo "$SUNRISE_UTC" | sed 's/T/ /' | sed 's/+00:00//')
-	SUNSET_FMT=$(echo "$SUNSET_UTC" | sed 's/T/ /' | sed 's/+00:00//')
-
-	SUNRISE_TS=$(date -d "$SUNRISE_FMT" +%s 2>/dev/null)
-	SUNSET_TS=$(date -d "$SUNSET_FMT" +%s 2>/dev/null)
-
-	if [ -z "$SUNRISE_TS" ] || [ -z "$SUNSET_TS" ]; then
-		echo "ERRORE CRITICO: Il comando 'date -d' non è riuscito a convertire gli orari UTC in secondi UNIX."
-		exit 1
-	fi
-
-	if [ "$CURRENT_HOUR" -ge "$SUNRISE_TS" ] && [ "$CURRENT_HOUR" -lt "$SUNSET_TS" ]; then
-		capture_day
+	if [ "$now" -ge "$sunrise" ] && [ "$now" -lt "$sunset" ]; then
+		echo day
 	else
-		capture_night
+		echo night
 	fi
 }
 
-
 # ---------------------------------------------------
-# Funzione cattura per giorno
+# Scatto. I valori salvati in UCI sono gli indici delle scelte
+# di gphoto2 (vedi iso_data.json ecc.), quindi si usa
+# --set-config-index: con --set-config un indice come "1" verrebbe
+# interpretato come etichetta (es. tempo di 1 secondo).
 # ---------------------------------------------------
-capture_day() {
-    rm -f ./*.jpg 2>/dev/null
+SHUTTER_JSON=/www/luci-static/resources/webcam/shutterspeed_data.json
 
-    # Heizung aus, um genug Strom zu haben
-    if [ "${WC_HEATING:-0}" -eq 1 ]; then
-        . /usr/bin/serialsend h
-    fi
-
-    gphoto2 --set-config eosremoterelease=3 \
-        --set-config eosremoterelease=4 \
-        --set-config iso="$WC_ISO_DAY" \
-        --set-config aperture="$WC_APERTURE_DAY" \
-        --set-config shutterspeed="$WC_SHUTTERSPEED_DAY" \
-        --get-all-metadata \
-        --capture-image-and-download \
-        --force-overwrite \
-		--filename "$FILENAME" 2>&1 1>/dev/null
-
-    # Heizung wieder auf vorherigen Stand
-    if [ "${WC_HEATING:-0}" -eq 1 ]; then
-        . /usr/bin/serialsend H
-    fi
-
-    upload
+# Etichetta della scelta di gphoto2 con indice $2 nel file JSON $1
+choice_label() {
+	sed -n "s/.*\"value\": *\"$2\", *\"label\": *\"\([^\"]*\)\".*/\1/p" "$1" 2>/dev/null | head -n 1
 }
 
+# Un valore vuoto significa "non modificare": resta l'impostazione della
+# fotocamera (utile in modalità P/Av/Tv). Il tempo "bulb" non è mai applicato
+# perché con --capture-image-and-download lo scatto non termina.
+shoot() {
+	local iso="$1" aperture="$2" shutter="$3"
 
-# ---------------------------------------------------
-# Funzione cattura per notte
-# ---------------------------------------------------
-capture_night() {
-    rm -f ./*.jpg 2>/dev/null
+	set -- --set-config eosremoterelease=3 --set-config eosremoterelease=4
+	[ -n "$iso" ] && set -- "$@" --set-config-index iso="$iso"
+	[ -n "$aperture" ] && set -- "$@" --set-config-index aperture="$aperture"
+	if [ -n "$shutter" ]; then
+		if [ "$(choice_label "$SHUTTER_JSON" "$shutter")" = bulb ]; then
+			log "Tempo di scatto 'bulb' ignorato: uso l'impostazione della fotocamera."
+		else
+			set -- "$@" --set-config-index shutterspeed="$shutter"
+		fi
+	fi
 
-    # Heizung wieder auf vorherigen Stand
-    if [ "${WC_HEATING:-0}" -eq 1 ]; then
-        . /usr/bin/serialsend h
-    fi
-
-
-    gphoto2 --set-config eosremoterelease=3 \
-        --set-config eosremoterelease=4 \
-        --set-config iso="$WC_ISO_NIGHT" \
-        --set-config aperture="$WC_APERTURE_NIGHT" \
-        --set-config shutterspeed="$WC_SHUTTERSPEED_NIGHT" \
-        --get-all-metadata \
-        --capture-image-and-download \
-        --force-overwrite \
-		--filename "$FILENAME" 2>&1 1>/dev/null
-
-    # Heizung wieder auf vorherigen Stand
-    if [ "${WC_HEATING:-0}" -eq 1 ]; then
-        . /usr/bin/serialsend H
-    fi
-
-    upload
+	gphoto2 "$@" \
+		--capture-image-and-download \
+		--force-overwrite \
+		--filename "$FILENAME" >/dev/null 2>"$WORK_DIR/gphoto2.err"
 }
 
+# Spegne e riaccende la fotocamera tramite il relè della scheda e attende
+# che torni visibile su USB (sblocca gli errori PTP/I-O).
+camera_power_cycle() {
+	local i
+	log "Riavvio della fotocamera tramite la scheda."
+	$SERIAL send c
+	sleep 10
+	$SERIAL send C
+	for i in 1 2 3 4 5 6; do
+		sleep 5
+		gphoto2 --auto-detect 2>/dev/null | grep -q usb: && return 0
+	done
+	log "La fotocamera non è ricomparsa su USB dopo il riavvio."
+	return 1
+}
+
+capture() {
+	local iso aperture shutter rc
+
+	if [ "$MODE" = day ]; then
+		iso="$WC_ISO_DAY"; aperture="$WC_APERTURE_DAY"; shutter="$WC_SHUTTERSPEED_DAY"
+	else
+		iso="$WC_ISO_NIGHT"; aperture="$WC_APERTURE_NIGHT"; shutter="$WC_SHUTTERSPEED_NIGHT"
+	fi
+
+	rm -f "$WORK_DIR"/*.jpg 2>/dev/null
+
+	# Spegne il riscaldamento durante lo scatto per avere abbastanza corrente
+	touch "$CAPTURE_FLAG"
+	if [ "$WC_HEATING" = 1 ] && [ "$(cat "$HEATER_STATE" 2>/dev/null)" = 1 ]; then
+		$SERIAL send h
+	fi
+
+	shoot "$iso" "$aperture" "$shutter"
+	rc=$?
+	if [ "$rc" -ne 0 ] || [ ! -f "$FILENAME" ]; then
+		log "Primo tentativo fallito: $(tail -n 3 "$WORK_DIR/gphoto2.err" | tr '\n' ' ')"
+		camera_power_cycle
+		shoot "$iso" "$aperture" "$shutter"
+		rc=$?
+	fi
+
+	# Ripristina il riscaldamento (il controllo anti-appannamento potrebbe
+	# averne cambiato lo stato desiderato nel frattempo)
+	rm -f "$CAPTURE_FLAG"
+	if [ "$WC_HEATING" = 1 ] && [ "$(cat "$HEATER_STATE" 2>/dev/null)" = 1 ]; then
+		$SERIAL send H
+	fi
+
+	if [ "$rc" -ne 0 ] || [ ! -f "$FILENAME" ]; then
+		fail "scatto fallito: $(tail -n 3 "$WORK_DIR/gphoto2.err" | tr '\n' ' ')"
+	fi
+}
 
 # ---------------------------------------------------
-# Funzione Upload Foto
+# Upload: ftp, ftps (FTP su TLS) o sftp
 # ---------------------------------------------------
 upload() {
-    # Verifica che il file da caricare esista
-    if [ ! -f "$FILENAME" ]; then
-        echo "Errore: Il file '$FILENAME' non esiste"
-        exit 1
-    fi
+	local url port dir
 
-    # Esegue l'upload usando curl (disponibile di default su OpenWrt)
-    curl -s -S -T "$FILENAME" \
-        --user "$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD" \
-        --ftp-create-dirs \
-        "ftp://$WC_UPLOAD_SERVER/$WC_UPLOAD_DIRECTORY/$FILENAME"
+	[ -n "$WC_UPLOAD_SERVER" ] || fail "server di upload non configurato"
 
-    # Controlla il risultato dell'operazione
-    if [ $? -eq 0 ]; then
-        echo "Upload completato con successo!"
-        exit 0
-    else
-        echo "Errore durante l'upload del file"
-        exit 1
-    fi
+	port=""
+	[ -n "$WC_UPLOAD_PORT" ] && port=":$WC_UPLOAD_PORT"
+	dir="${WC_UPLOAD_DIRECTORY#/}"
+	dir="${dir%/}"
+	[ -n "$dir" ] && dir="$dir/"
+
+	set -- -s -S --connect-timeout 30 --retry 2 -T "$FILENAME" \
+		--user "$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD" --ftp-create-dirs
+
+	case "$WC_UPLOAD_PROTOCOL" in
+		ftps)
+			# FTP esplicito su TLS: la connessione deve essere cifrata
+			set -- "$@" --ssl-reqd
+			[ "$WC_UPLOAD_INSECURE" = 1 ] && set -- "$@" --insecure
+			url="ftp://$WC_UPLOAD_SERVER$port/$dir$FILENAME"
+			;;
+		sftp)
+			curl -V 2>/dev/null | grep -q '^Protocols:.*sftp' || \
+				fail "il curl installato non supporta SFTP (serve curl compilato con libssh2)"
+			[ -n "$WC_UPLOAD_KEY" ] && set -- "$@" --key "$WC_UPLOAD_KEY"
+			[ "$WC_UPLOAD_INSECURE" = 1 ] && set -- "$@" --insecure
+			# "~/" = percorso relativo alla home dell'utente sul server
+			url="sftp://$WC_UPLOAD_SERVER$port/~/$dir$FILENAME"
+			;;
+		*)
+			url="ftp://$WC_UPLOAD_SERVER$port/$dir$FILENAME"
+			;;
+	esac
+
+	if curl "$@" "$url"; then
+		log "Upload completato: $FILENAME ($MODE, $WC_UPLOAD_PROTOCOL)"
+		write_status ok
+	else
+		fail "upload fallito verso $WC_UPLOAD_PROTOCOL://$WC_UPLOAD_SERVER$port/$dir"
+	fi
 }
 
-
-start
+MODE=$(day_or_night)
+capture
+upload
+exit 0

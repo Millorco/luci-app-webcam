@@ -235,7 +235,7 @@ download_and_install() {
             cp "$file" "$dest_path" 2>/dev/null || true
 
             case "$dest_path" in
-                /usr/bin/*|/usr/sbin/*|/etc/init.d/*)
+                /usr/bin/*|/usr/sbin/*|/usr/libexec/webcam/*|/etc/init.d/*)
                     chmod +x "$dest_path" 2>/dev/null || true
                     ;;
             esac
@@ -248,7 +248,7 @@ download_and_install() {
     if [ -f "/etc/init.d/webcam_capture" ]; then
         chmod +x /etc/init.d/webcam_capture
         /etc/init.d/webcam_capture enable
-        /etc/init.d/webcam_capture start
+        /etc/init.d/webcam_capture restart
     fi
 
     echo -e "${GREEN}Installazione completata${NC}"
