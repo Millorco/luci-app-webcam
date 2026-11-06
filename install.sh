@@ -251,6 +251,10 @@ download_and_install() {
         /etc/init.d/webcam_capture restart
     fi
 
+    # Versione installata (mostrata nella pagina Status di LuCI)
+    mkdir -p /usr/share/webcam
+    echo "$SELECTED_VERSION" > /usr/share/webcam/version
+
     echo -e "${GREEN}Installazione completata${NC}"
 }
 
