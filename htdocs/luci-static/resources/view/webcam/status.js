@@ -42,9 +42,15 @@ return view.extend({
 
 		return Promise.all([
 			readJSON('/tmp/webcam/status.json'),
-			readJSON('/tmp/webcam/capture.json')
+			readJSON('/tmp/webcam/capture.json'),
+			L.resolveDefault(fs.read('/usr/share/webcam/version'), null)
 		]).then(function(res) {
 			var st = res[0], cap = res[1], rows = [];
+			var appVersion = res[2] ? res[2].trim() : null;
+
+			rows.push(row(_('App version'), appVersion || _('unknown')));
+			rows.push(row(_('Board firmware'),
+				(st && st.board_fw) ? st.board_fw : _('no answer from the board')));
 
 			if (st) {
 				rows.push(row(_('Sensor'), st.sensor_ok ? _('OK') : _('Read error')));

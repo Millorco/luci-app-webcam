@@ -38,6 +38,9 @@ set_heater() {
 	HEATER="$1"
 }
 
+# Versione del firmware della scheda (risposta a 'v': "Webcam Board fw 2.1")
+BOARD_FW="$($SERIAL query v 2>/dev/null | sed -n 's/.*fw[[:space:]]*\([0-9][0-9A-Za-z.\-]*\).*/\1/p' | head -n 1)"
+
 TEMP="$($SERIAL query t 2>/dev/null)"
 HUM="$($SERIAL query u 2>/dev/null)"
 
@@ -93,7 +96,8 @@ cat > "$STATUS_JSON.tmp" <<JSON
   "humidity": $(num "$HUM"),
   "dewpoint": $(num "$DEWPOINT"),
   "heating_enabled": $( [ "$WC_HEATING" = 1 ] && echo true || echo false ),
-  "heater": $( [ "$HEATER" = 1 ] && echo true || echo false )
+  "heater": $( [ "$HEATER" = 1 ] && echo true || echo false ),
+  "board_fw": $( [ -n "$BOARD_FW" ] && echo "\"$BOARD_FW\"" || echo null )
 }
 JSON
 mv "$STATUS_JSON.tmp" "$STATUS_JSON"

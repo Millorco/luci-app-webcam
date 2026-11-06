@@ -69,7 +69,7 @@ Le pagine sono in **Servizi → Webcam**. La configurazione è salvata in `/etc/
 
 ### Status
 
-Mostra temperatura, umidità, punto di rugiada, stato del riscaldamento, ultimo scatto (giorno/notte) ed esito dell'upload. Si aggiorna ogni 30 secondi.
+Mostra la versione dell'app e del firmware della scheda (letta con il comando `v`), temperatura, umidità, punto di rugiada, stato del riscaldamento, ultimo scatto (giorno/notte) ed esito dell'upload. Si aggiorna ogni 30 secondi; i dati della scheda ogni 5 minuti.
 
 ### System
 

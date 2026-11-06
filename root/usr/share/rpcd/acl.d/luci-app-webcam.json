@@ -4,7 +4,8 @@
     "read": {
       "file": {
         "/tmp/webcam/status.json": [ "read" ],
-        "/tmp/webcam/capture.json": [ "read" ]
+        "/tmp/webcam/capture.json": [ "read" ],
+        "/usr/share/webcam/version": [ "read" ]
       },
       "uci": [
         "webcam"
