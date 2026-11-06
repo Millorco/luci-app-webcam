@@ -104,6 +104,7 @@ libgphoto2-drivers-ptp2
  - s - Stato su una riga (relè, sensore, heartbeat, uptime, numero di cicli di alimentazione)
  - v - Versione firmware
  - ? - Elenco comandi
+ - i - (solo da FTDI) scansione del bus I2C
  - w / W - (solo da FTDI) sospende per 60 minuti / riattiva il watchdog dell'heartbeat, per le prove al banco
 
 Per sicurezza riscaldamento e ventola si spengono da soli se il router non ripete `H`/`F` entro 20 minuti (`climate` li reinvia ogni 5 minuti).
@@ -118,7 +119,7 @@ Connettore FTDI della scheda: 1 GND, 2 TX (va all'RXD dell'adattatore), 3 RX (va
 
 ### Debug
 
-Aprendo il monitor seriale sul connettore FTDI a **9600 baud** (senza fine riga) la scheda stampa all'avvio la versione, la causa del reset (accensione, DTR, brown-out, watchdog), la scansione del bus I2C e lo stato del sensore. Poi registra con timestamp ogni comando ricevuto dal router e ogni cambio dei relè, e ogni minuto stampa una riga di stato. Gli stessi comandi del router si possono digitare dal monitor seriale.
+Aprendo il monitor seriale sul connettore FTDI a **9600 baud** (senza fine riga) la scheda stampa all'avvio la versione, la causa del reset (accensione, DTR, brown-out, watchdog), lo stato delle linee SDA/SCL, la scansione del bus I2C e lo stato del sensore. Poi registra con timestamp ogni comando ricevuto dal router e ogni cambio dei relè, e ogni minuto stampa una riga di stato. Gli stessi comandi del router si possono digitare dal monitor seriale.
 
 Il firmware legge un comando con `readString()`, che attende 1 secondo dopo l'ultimo carattere: per questo tutti gli script passano da `/usr/libexec/webcam/serial`, che serializza gli accessi e lascia 2 secondi tra un comando e l'altro.
 

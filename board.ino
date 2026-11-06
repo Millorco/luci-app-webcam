@@ -28,6 +28,7 @@
  * Solo dal connettore FTDI:
  *   w    sospende il watchdog dell'heartbeat per 60 minuti (prove al banco)
  *   W    riattiva subito il watchdog dell'heartbeat
+ *   i    scansione del bus I2C
  *
  * Differenze rispetto alla versione precedente:
  *   - i comandi vengono eseguiti appena arriva il carattere: prima
@@ -55,7 +56,7 @@
 #include <avr/wdt.h>
 #include "Adafruit_SHT31.h"
 
-#define FW_VERSION "2.0"
+#define FW_VERSION "2.1"
 
 // --- Pin --------------------------------------------------------------------
 const uint8_t PIN_CAMERA  = 2;
@@ -134,6 +135,8 @@ void saveResetFlags(void) {
 	MCUSR = 0;
 	wdt_disable();
 }
+
+void scanI2C();
 
 // --- Debug su FTDI ----------------------------------------------------------
 void logPrefix() {
@@ -235,7 +238,7 @@ void printStatus(Stream &port) {
 void printHelp(Stream &port) {
 	port.println(F("b heartbeat | C/c camera | H/h heating | P/p router | F/f fan"));
 	port.println(F("t temp | u hum | d test | r power cycle | s status | v version"));
-	port.println(F("w/W (solo FTDI) sospendi 60 min / riattiva watchdog heartbeat"));
+	port.println(F("w/W (solo FTDI) sospendi 60 min / riattiva watchdog heartbeat | i scansione I2C"));
 }
 
 // --- Ciclo di alimentazione -------------------------------------------------
@@ -318,6 +321,11 @@ void processCommand(char cmd, Stream &port, bool fromRouter) {
 	case '?':
 		printHelp(port);
 		break;
+	case 'i':
+		if (fromRouter)
+			break;
+		scanI2C();
+		break;
 	case 'w':
 		if (fromRouter)
 			break;
@@ -352,11 +360,29 @@ void printResetCause() {
 	Serial.println();
 }
 
+void checkI2CLines() {
+	// Con il bus a riposo SDA e SCL devono essere alti (pull-up).
+	// Una linea a 0 indica sensore non alimentato, corto o pull-up mancanti.
+	pinMode(A4, INPUT);
+	pinMode(A5, INPUT);
+	delay(2);
+	uint8_t sda = digitalRead(A4), scl = digitalRead(A5);
+	logPrefix();
+	Serial.print(F("Linee I2C a riposo: SDA(A4)="));
+	Serial.print(sda);
+	Serial.print(F(" SCL(A5)="));
+	Serial.print(scl);
+	if (!sda || !scl)
+		Serial.print(F("  <-- linea a massa: controlla alimentazione del sensore e pull-up"));
+	Serial.println();
+}
+
 void scanI2C() {
 	logPrefix();
 	Serial.print(F("Scansione I2C:"));
 	uint8_t found = 0;
 	for (uint8_t addr = 1; addr < 127; addr++) {
+		wdt_reset();
 		Wire.beginTransmission(addr);
 		if (Wire.endTransmission() == 0) {
 			Serial.print(F(" 0x"));
@@ -380,14 +406,21 @@ void setup() {
 		o.on = o.defaultOn;
 	}
 
+	// Watchdog attivo subito: se qualcosa si blocca durante l'avvio il micro riparte
+	wdt_enable(WDTO_8S);
+
 	Serial.begin(9600);
 	routerSerial.begin(9600);
-	Wire.begin();
-	Wire.setWireTimeout(25000, true); // evita blocchi del bus I2C
 
 	Serial.println();
 	logLine(F("Webcam Board fw " FW_VERSION " avviata"));
 	printResetCause();
+	checkI2CLines();
+
+	// Senza timeout la libreria Wire aspetta all'infinito se SDA o SCL
+	// restano a massa, e la scheda non arriva mai al loop
+	Wire.begin();
+	Wire.setWireTimeout(25000, true);
 	scanI2C();
 	sensorBegin();
 	readSensor();
@@ -397,8 +430,6 @@ void setup() {
 
 	printStatus(Serial);
 	logLine(F("Pronto. Digita ? per l'elenco comandi."));
-
-	wdt_enable(WDTO_8S);
 }
 
 void loop() {
