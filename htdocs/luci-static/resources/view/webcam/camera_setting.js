@@ -22,26 +22,32 @@ return view.extend({
         sDay.anonymous = true;
 
         oIsoDay = sDay.option(form.ListValue, 'iso_day', _('ISO'));
-        oIsoDay.rmempty = false;
+        oIsoDay.value('', _('Camera setting (do not change)'));
+        oIsoDay.rmempty = true;
 
         oApertureDay = sDay.option(form.ListValue, 'aperture_day', _('Aperture'));
-        oApertureDay.rmempty = false;
+        oApertureDay.value('', _('Camera setting (do not change)'));
+        oApertureDay.rmempty = true;
 
         oShutterDay = sDay.option(form.ListValue, 'shutterspeed_day', _('Shutter Speed'));
-        oShutterDay.rmempty = false;
+        oShutterDay.value('', _('Camera setting (do not change)'));
+        oShutterDay.rmempty = true;
 
         // Sezione Night 
         sNight = m.section(form.TypedSection, 'night', _('Night Settings'));
         sNight.anonymous = true;
 
         oIsoNight = sNight.option(form.ListValue, 'iso_night', _('ISO'));
-        oIsoNight.rmempty = false;
+        oIsoNight.value('', _('Camera setting (do not change)'));
+        oIsoNight.rmempty = true;
 
         oApertureNight = sNight.option(form.ListValue, 'aperture_night', _('Aperture'));
-        oApertureNight.rmempty = false;
+        oApertureNight.value('', _('Camera setting (do not change)'));
+        oApertureNight.rmempty = true;
 
         oShutterNight = sNight.option(form.ListValue, 'shutterspeed_night', _('Shutter Speed'));
-        oShutterNight.rmempty = false;
+        oShutterNight.value('', _('Camera setting (do not change)'));
+        oShutterNight.rmempty = true;
 
         // Carica i JSON in parallelo e popola entrambe le sezioni
         return Promise.all([
