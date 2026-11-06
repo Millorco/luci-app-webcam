@@ -104,7 +104,9 @@ libgphoto2-drivers-ptp2
  - s - Stato su una riga (relè, sensore, heartbeat, uptime, numero di cicli di alimentazione)
  - v - Versione firmware
  - ? - Elenco comandi
- - w - (solo da FTDI) attiva/disattiva il watchdog dell'heartbeat per le prove al banco
+ - w / W - (solo da FTDI) sospende per 60 minuti / riattiva il watchdog dell'heartbeat, per le prove al banco
+
+Per sicurezza riscaldamento e ventola si spengono da soli se il router non ripete `H`/`F` entro 20 minuti (`climate` li reinvia ogni 5 minuti).
 
 ## Firmware della scheda (`board.ino`)
 
