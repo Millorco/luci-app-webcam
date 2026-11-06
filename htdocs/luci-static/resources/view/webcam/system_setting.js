@@ -26,7 +26,7 @@ return view.extend({
 		o.rmempty = false;
 
 		s = m.section(form.TypedSection, 'general', _('Anti-fog Heating'),
-			_('The heater is switched on automatically when the temperature measured by the SHT31 gets close to the dew point, or drops below the minimum temperature (frost risk).'));
+			_('The heater is switched on automatically when the temperature measured by the SHT31/SHT35 gets close to the dew point, or drops below the minimum temperature (frost risk).'));
 		s.anonymous = true;
 
 		o = s.option(form.Flag, 'heating', _('Automatic heating'));
