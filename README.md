@@ -1,7 +1,6 @@
-# App to controlla a reflex whith gPhoto2
+# luci-app-webcam
 
-This app is meant to be a starting point for developing new LuCI apps using the modern JavaScript client-rendered approach.
-Previously the LuCI used a Lua server-side render approach which is deprecated now.
+App LuCI per OpenWrt che trasforma un router (es. GL.iNet GL-MT300N-V2) in una webcam time-lapse: scatta con una reflex Canon EOS collegata via USB tramite gPhoto2, usa impostazioni diverse per giorno e notte e carica le foto via FTP/FTPS/SFTP. Una scheda con ATmega328P collegata in seriale gestisce i relè (fotocamera, router, riscaldamento, ventola), il sensore di temperatura/umidità SHT3x per l'anti-appannamento del vetro e un watchdog che riavvia il router se si blocca.
 
 ## Installation
 
