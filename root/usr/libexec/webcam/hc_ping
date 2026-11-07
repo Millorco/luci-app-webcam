@@ -1,0 +1,45 @@
+#!/bin/sh
+# ---------------------------------------------------
+# Ping verso healthchecks.io (o un server Healthchecks self-hosted)
+#
+# Uso: hc_ping [-w] ok|fail|log [messaggio]
+#   ok    scatto e upload riusciti (azzera il timer del check)
+#   fail  errore: il check va subito in allarme
+#   log   solo una riga nel registro eventi del check (es. avvio)
+#   -w    rete forse non ancora pronta (avvio): riprova più a lungo
+#
+# L'URL è l'opzione webcam.@general[0].ping_url, per esempio
+# https://hc-ping.com/<uuid>. Se è vuota non fa nulla.
+# ---------------------------------------------------
+
+TRIES=3
+[ "$1" = -w ] && { TRIES=12; shift; }
+KIND="${1:-ok}"
+MSG="$2"
+
+URL="$(uci -q get webcam.@general[0].ping_url)"
+[ -n "$URL" ] || exit 0
+
+case "$URL" in
+	http://*|https://*) ;;
+	*) logger -t "webcam ping" "ping_url non valido: deve iniziare con http:// o https://"; exit 1 ;;
+esac
+
+URL="${URL%/}"
+case "$KIND" in
+	ok) ;;
+	fail|log) URL="$URL/$KIND" ;;
+	*) echo "Uso: $0 [-w] ok|fail|log [messaggio]" >&2; exit 2 ;;
+esac
+
+i=1
+while :; do
+	# Il corpo (max 100 kB) compare nel registro eventi del check
+	curl -fsS -m 10 -o /dev/null --data-raw "$MSG" "$URL" 2>/dev/null && exit 0
+	[ "$i" -ge "$TRIES" ] && break
+	i=$((i + 1))
+	sleep 10
+done
+
+logger -t "webcam ping" "Ping '$KIND' non riuscito dopo $TRIES tentativi"
+exit 1

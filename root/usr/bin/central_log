@@ -1,0 +1,149 @@
+#!/bin/sh
+# ---------------------------------------------------
+# Log centralizzati: tunnel WireGuard verso il VPS e syslog remoto
+# (vedi server/README.md).
+#
+# Uso:
+#   central_log setup <peer.conf> [ip_syslog]
+#       importa il file del peer generato sul VPS (wireguard/peer_<nome>/
+#       peer_<nome>.conf), crea l'interfaccia wglog e manda il log del router
+#       a ip_syslog:514 via TCP (predefinito: .1 della rete del tunnel,
+#       es. 10.13.13.1)
+#   central_log off      toglie tunnel e syslog remoto
+#   central_log status   mostra lo stato
+# ---------------------------------------------------
+
+IFACE=wglog
+PORT=514
+
+die() { echo "Errore: $*" >&2; exit 1; }
+
+# Valore della chiave $2 nella sezione [$1] del file $3
+conf_get() {
+	awk -v sec="[$1]" -v key="$2" '
+		{ sub(/\r$/, "") }
+		/^[ \t]*\[/ { cur = $0; gsub(/[ \t]/, "", cur); next }
+		cur == sec {
+			line = $0
+			if (match(line, "^[ \t]*" key "[ \t]*=")) {
+				v = substr(line, RLENGTH + 1)
+				gsub(/^[ \t]+|[ \t]+$/, "", v)
+				print v
+				exit
+			}
+		}' "$3"
+}
+
+need_wireguard() {
+	command -v wg >/dev/null 2>&1 && [ -e /lib/netifd/proto/wireguard.sh ] && return 0
+	die "WireGuard non installato: opkg update && opkg install wireguard-tools kmod-wireguard"
+}
+
+remove_wg() {
+	while uci -q get network.@wireguard_$IFACE[0] >/dev/null; do
+		uci delete network.@wireguard_$IFACE[0]
+	done
+	uci -q delete network.$IFACE
+}
+
+setup() {
+	local conf="$1" logip="$2" priv addr pub psk endpoint host port allowed keep a
+
+	[ -f "$conf" ] || die "file $conf non trovato"
+	need_wireguard
+
+	priv=$(conf_get Interface PrivateKey "$conf")
+	addr=$(conf_get Interface Address "$conf")
+	pub=$(conf_get Peer PublicKey "$conf")
+	psk=$(conf_get Peer PresharedKey "$conf")
+	endpoint=$(conf_get Peer Endpoint "$conf")
+	allowed=$(conf_get Peer AllowedIPs "$conf")
+	keep=$(conf_get Peer PersistentKeepalive "$conf")
+
+	[ -n "$priv" ] && [ -n "$addr" ] && [ -n "$pub" ] && [ -n "$endpoint" ] || \
+		die "nel file mancano PrivateKey, Address, PublicKey o Endpoint"
+
+	# Endpoint: host:porta oppure [ipv6]:porta
+	port="${endpoint##*:}"
+	host="${endpoint%:*}"
+	host="${host#[}"; host="${host%]}"
+	case "$port" in ''|*[!0-9]*) die "Endpoint non valido: $endpoint" ;; esac
+
+	# Solo IPv4 (es. 10.13.13.2/32): il primo indirizzo se ce ne sono più
+	addr="${addr%%,*}"
+	addr=$(echo "$addr" | tr -d " ")
+	case "$addr" in */*) ;; *) addr="$addr/32" ;; esac
+
+	if [ -z "$logip" ]; then
+		a="${addr%/*}"
+		logip="${a%.*}.1"
+	fi
+
+	remove_wg
+	uci set network.$IFACE=interface
+	uci set network.$IFACE.proto=wireguard
+	uci set network.$IFACE.private_key="$priv"
+	uci add_list network.$IFACE.addresses="$addr"
+
+	uci add network wireguard_$IFACE >/dev/null
+	uci set network.@wireguard_$IFACE[-1].description=central_log
+	uci set network.@wireguard_$IFACE[-1].public_key="$pub"
+	[ -n "$psk" ] && uci set network.@wireguard_$IFACE[-1].preshared_key="$psk"
+	uci set network.@wireguard_$IFACE[-1].endpoint_host="$host"
+	uci set network.@wireguard_$IFACE[-1].endpoint_port="$port"
+	uci set network.@wireguard_$IFACE[-1].persistent_keepalive="${keep:-25}"
+	uci set network.@wireguard_$IFACE[-1].route_allowed_ips=1
+	# Nel tunnel solo la rete del tunnel, mai tutto il traffico
+	echo "$allowed" | tr ',' '\n' | while read -r a; do
+		a=$(echo "$a" | tr -d " ")
+		case "$a" in ''|0.0.0.0/0|::/0) continue ;; esac
+		uci add_list network.@wireguard_$IFACE[-1].allowed_ips="$a"
+	done
+	uci -q get network.@wireguard_$IFACE[-1].allowed_ips >/dev/null || \
+		uci add_list network.@wireguard_$IFACE[-1].allowed_ips="${logip%.*}.0/24"
+	uci commit network
+
+	uci set system.@system[0].log_ip="$logip"
+	uci set system.@system[0].log_port="$PORT"
+	uci set system.@system[0].log_proto=tcp
+	uci commit system
+
+	/etc/init.d/network reload
+	sleep 5
+	/etc/init.d/log restart
+
+	logger -t central_log "Log remoto attivo verso $logip:$PORT (tunnel $IFACE verso $host:$port)"
+	echo "Tunnel $IFACE verso $host:$port, log remoto verso $logip:$PORT/tcp."
+	echo "Controlla con: central_log status"
+}
+
+off() {
+	remove_wg
+	uci commit network
+	uci -q delete system.@system[0].log_ip
+	uci -q delete system.@system[0].log_port
+	uci -q delete system.@system[0].log_proto
+	uci commit system
+	/etc/init.d/network reload
+	/etc/init.d/log restart
+	echo "Tunnel e log remoto disattivati."
+}
+
+status() {
+	local logip
+	logip=$(uci -q get system.@system[0].log_ip)
+	echo "Log remoto: ${logip:-disattivato}${logip:+:$(uci -q get system.@system[0].log_port) $(uci -q get system.@system[0].log_proto)}"
+	if command -v wg >/dev/null 2>&1 && wg show $IFACE >/dev/null 2>&1; then
+		wg show $IFACE | grep -E 'endpoint|latest handshake|transfer'
+		[ -n "$logip" ] && { ping -c 2 -W 2 "$logip" >/dev/null 2>&1 && echo "Server $logip raggiungibile" || echo "Server $logip NON raggiungibile"; }
+	else
+		echo "Tunnel $IFACE: non attivo"
+	fi
+}
+
+case "$1" in
+	setup) [ -n "$2" ] || die "uso: $0 setup <peer.conf> [ip_syslog]"; setup "$2" "$3" ;;
+	off) off ;;
+	status) status ;;
+	*) sed -n '3,13p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

@@ -9,6 +9,7 @@ App LuCI per OpenWrt che trasforma un piccolo router (testata su **GL.iNet GL-MT
   - legge un sensore **SHT31/SHT35** e accende il riscaldamento per evitare condensa e brina sul vetro del case;
   - fa da **watchdog**: se il router smette di rispondere, toglie e ridà corrente a router e fotocamera.
 - Se la fotocamera si blocca, la riavvia da sola tramite il relè.
+- Avvisa tramite [healthchecks.io](https://healthchecks.io) quando una webcam smette di caricare foto, e può mandare i log di tutti i router a un unico server (vedi [`server/`](server/README.md)).
 
 ![Status](screenshot/status.png)
 
@@ -19,6 +20,7 @@ App LuCI per OpenWrt che trasforma un piccolo router (testata su **GL.iNet GL-MT
 - [Configurazione](#configurazione)
 - [Come funziona](#come-funziona)
 - [Scheda relè e sensore](#scheda-relè-e-sensore)
+- [Monitoraggio e log centralizzati](#monitoraggio-e-log-centralizzati)
 - [Risoluzione dei problemi](#risoluzione-dei-problemi)
 - [Struttura del progetto](#struttura-del-progetto)
 
@@ -87,6 +89,7 @@ Funzionano anche in modalità manutenzione. Dopo lo scatto la pagina mostra l'an
 - **Latitudine / Longitudine**: servono per calcolare alba e tramonto.
 - **Temperature scale**: °C o °F nella pagina Status.
 - **Anti-fog Heating**: abilita il controllo automatico e ne imposta le soglie (margine dal punto di rugiada, temperatura minima, isteresi, ventola insieme al riscaldamento).
+- **Monitoring**: URL di ping di [healthchecks.io](https://healthchecks.io), vedi [Monitoraggio e log centralizzati](#monitoraggio-e-log-centralizzati).
 - **Serial Port**: `/dev/ttyS1` a 9600 baud per la scheda.
 
 ### Camera
@@ -198,6 +201,11 @@ All'avvio la scheda stampa:
 
 Poi registra con timestamp ogni comando ricevuto e ogni cambio dei relè, e ogni minuto stampa una riga di stato.
 
+## Monitoraggio e log centralizzati
+
+- **Avvisi**: crea un check su [healthchecks.io](https://healthchecks.io) per ogni webcam, con *Period* uguale all'intervallo di scatto e *Grace time* almeno doppio, e copia il ping URL in **System → Monitoring**. Il router fa un ping dopo ogni foto caricata e un ping `/fail` con il messaggio a ogni errore. Scrive nel registro del check anche gli avvii del servizio (con l'uptime, per vedere i riavvii) e la modalità manutenzione. Se il router si spegne, l'allarme arriva alla fine del grace time.
+- **Log**: OpenWrt può mandare il suo log a un server syslog (**System → System → Logging**). In [`server/`](server/README.md) c'è un `docker-compose.yml` per un VPS con un tunnel WireGuard e VictoriaLogs, con la configurazione passo per passo; sul router basta `central_log setup peer_<nome>.conf`.
+
 ## Risoluzione dei problemi
 
 | Sintomo | Causa probabile | Cosa fare |
@@ -222,10 +230,11 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
 .
 ├── board.ino                                  firmware della scheda
 ├── install.sh                                 installazione da release GitHub
+├── server/                                    VPS: WireGuard + VictoriaLogs (Docker)
 ├── htdocs/luci-static/resources
 │   ├── view/webcam/                           pagine LuCI
 │   │   ├── status.js                          stato, ultimo scatto, "Scatta ora" e anteprima
-│   │   ├── system_setting.js                  generale, anti-appannamento, seriale
+│   │   ├── system_setting.js                  generale, anti-appannamento, monitoraggio, seriale
 │   │   ├── camera_setting.js                  intervallo, fasce speciali, esposizione giorno/notte
 │   │   └── up_server.js                       server di upload, archivio, file aggiuntivi
 │   └── webcam/*_data.json                     scelte di ISO/diaframma/tempo (generate)
@@ -235,6 +244,7 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
     ├── usr/bin/
     │   ├── capture, capture_service           scatto e ciclo di scatto
     │   ├── capture_now                        scatto manuale dalla pagina Status
+    │   ├── central_log                        tunnel WireGuard e log remoto
     │   ├── climate                            anti-appannamento
     │   ├── heartbeat, serialsend, read_temp   comandi verso la scheda
     │   ├── iso_export, aperture_export,
@@ -245,6 +255,7 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
     ├── usr/libexec/webcam/
     │   ├── serial                             accesso seriale con lock
     │   ├── schedule                           fasce orarie speciali
+    │   ├── hc_ping                            ping a healthchecks.io
     │   └── sun_times                          calcolo locale di alba e tramonto
     └── usr/share/
         ├── luci/menu.d/luci-app-webcam.json   menu

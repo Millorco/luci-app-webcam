@@ -56,6 +56,19 @@ return view.extend({
 		o.rmempty = false;
 		o.depends('heating', '1');
 				
+		s = m.section(form.TypedSection, 'general', _('Monitoring'),
+			_('Ping a <a href="https://healthchecks.io" target="_blank">healthchecks.io</a> check (or a self-hosted Healthchecks) after every uploaded photo, so you get an alert when the webcam stops. Errors, service start (with uptime, to spot reboots) and maintenance mode are written to the check log. To send the router log to a central server use System &gt; System &gt; Logging.'));
+		s.anonymous = true;
+
+		o = s.option(form.Value, 'ping_url', _('Ping URL'),
+			_('Leave empty to disable. Set the check period to the photo interval and the grace time to at least twice that.'));
+		o.placeholder = 'https://hc-ping.com/your-uuid';
+		o.validate = function(section_id, value) {
+			if (value === '' || /^https?:\/\/[^\s"'`$\\]+$/.test(value))
+				return true;
+			return _('Enter a URL starting with http:// or https://');
+		};
+
 		s = m.section(form.TypedSection, 'general', _('Serial Port Setting'));
 		s.anonymous = true;
 

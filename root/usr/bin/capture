@@ -12,6 +12,7 @@
 . /usr/bin/webcam.cfg
 
 SERIAL=/usr/libexec/webcam/serial
+PING=/usr/libexec/webcam/hc_ping
 CAPTURE_FLAG="$WC_STATE_DIR/capturing"
 HEATER_STATE="$WC_STATE_DIR/heater"
 CAPTURE_JSON="$WC_STATE_DIR/capture.json"
@@ -92,9 +93,17 @@ JSON
 	mv "$CAPTURE_JSON.tmp" "$CAPTURE_JSON"
 }
 
+# Ping al servizio di monitoraggio (healthchecks.io), in background per non
+# ritardare lo scatto. Gli scatti di prova senza upload non contano.
+ping_monitor() {
+	[ "$NO_UPLOAD" = 1 ] && return
+	"$PING" "$1" "$WC_NAME: $2" </dev/null >/dev/null 2>&1 &
+}
+
 fail() {
 	log "ERRORE: $1"
 	write_status "$1"
+	ping_monitor fail "$1"
 	exit 1
 }
 
@@ -374,5 +383,6 @@ if [ "$NO_UPLOAD" = 1 ]; then
 	write_status test
 else
 	upload
+	ping_monitor ok "foto $FILENAME caricata ($MODE${SPECIAL:+, $SPECIAL})"
 fi
 exit 0
