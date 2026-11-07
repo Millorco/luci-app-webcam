@@ -145,5 +145,5 @@ case "$1" in
 	setup) [ -n "$2" ] || die "uso: $0 setup <peer.conf> [ip_syslog]"; setup "$2" "$3" ;;
 	off) off ;;
 	status) status ;;
-	*) sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+	*) sed -n '3,13p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
