@@ -19,4 +19,22 @@ if [ -d /var/lock/webcam_capture.lock ]; then
 fi
 
 /usr/bin/capture $1 </dev/null >/dev/null 2>&1 &
+PID=$!
+
+# capture prende il lock subito dopo aver letto la configurazione: se in
+# quei secondi parte un altro scatto, esce con codice 3. Si aspetta un
+# attimo per poter rispondere "busy" invece di "started".
+i=0
+while [ "$i" -lt 3 ]; do
+	sleep 1
+	if ! kill -0 "$PID" 2>/dev/null; then
+		wait "$PID"
+		if [ $? -eq 3 ]; then
+			echo busy
+			exit 1
+		fi
+		break
+	fi
+	i=$((i + 1))
+done
 echo started
