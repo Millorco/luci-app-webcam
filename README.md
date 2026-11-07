@@ -9,7 +9,7 @@ App LuCI per OpenWrt che trasforma un piccolo router (testata su **GL.iNet GL-MT
   - legge un sensore **SHT31/SHT35** e accende il riscaldamento per evitare condensa e brina sul vetro del case;
   - fa da **watchdog**: se il router smette di rispondere, toglie e ridà corrente a router e fotocamera.
 - Se la fotocamera si blocca, la riavvia da sola tramite il relè.
-- Avvisa tramite [healthchecks.io](https://healthchecks.io) quando una webcam smette di caricare foto, e può mandare i log di tutti i router a un unico server (vedi [`server/`](server/README.md)).
+- Avvisa tramite [healthchecks.io](https://healthchecks.io) quando una webcam smette di caricare foto, e può mandare i log di tutti i router a un unico server (vedi [webcam-logserver](https://github.com/Millorco/webcam-logserver)).
 
 ![Status](screenshot/status.png)
 
@@ -204,7 +204,7 @@ Poi registra con timestamp ogni comando ricevuto e ogni cambio dei relè, e ogni
 ## Monitoraggio e log centralizzati
 
 - **Avvisi**: crea un check su [healthchecks.io](https://healthchecks.io) per ogni webcam, con *Period* uguale all'intervallo di scatto e *Grace time* almeno doppio, e copia il ping URL in **System → Monitoring**. Il router fa un ping dopo ogni foto caricata e un ping `/fail` con il messaggio a ogni errore. Scrive nel registro del check anche gli avvii del servizio (con l'uptime, per vedere i riavvii) e la modalità manutenzione. Se il router si spegne, l'allarme arriva alla fine del grace time.
-- **Log**: OpenWrt può mandare il suo log a un server syslog (**System → System → Logging**). In [`server/`](server/README.md) c'è un `docker-compose.yml` per un VPS con un tunnel WireGuard e VictoriaLogs, con la configurazione passo per passo; sul router basta `central_log setup peer_<nome>.conf`. Se non ti serve la VPN, [`server/victorialogs/`](server/victorialogs/README.md) ha la versione più semplice: solo VictoriaLogs, con i router che mandano il log direttamente al VPS.
+- **Log**: OpenWrt può mandare il suo log a un server syslog (**System → System → Logging**). Il server con VictoriaLogs (Docker), con o senza VPN, è nel repository [webcam-logserver](https://github.com/Millorco/webcam-logserver). Per la variante WireGuard, sul router c'è `central_log setup peer_<nome>.conf`.
 
 ## Risoluzione dei problemi
 
@@ -230,8 +230,6 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
 .
 ├── board.ino                                  firmware della scheda
 ├── install.sh                                 installazione da release GitHub
-├── server/                                    VPS: WireGuard + VictoriaLogs (Docker)
-│   └── victorialogs/                          VPS: solo VictoriaLogs, senza VPN
 ├── htdocs/luci-static/resources
 │   ├── view/webcam/                           pagine LuCI
 │   │   ├── status.js                          stato, ultimo scatto, "Scatta ora" e anteprima
