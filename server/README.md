@@ -1,5 +1,7 @@
 # Server centrale: log e monitoraggio
 
+> **Senza VPN**: se ti basta mandare il syslog dei router direttamente all'IP pubblico del VPS, senza tunnel, usa [`victorialogs/`](victorialogs/README.md).
+
 Questa cartella contiene un `docker-compose.yml` per un VPS che raccoglie i log di tutti i router con luci-app-webcam. Gli avvisi quando una webcam smette di caricare foto arrivano invece da [healthchecks.io](https://healthchecks.io), che gira fuori dal VPS: così ti avvisa anche se il VPS è giù.
 
 ```

@@ -204,7 +204,7 @@ Poi registra con timestamp ogni comando ricevuto e ogni cambio dei relè, e ogni
 ## Monitoraggio e log centralizzati
 
 - **Avvisi**: crea un check su [healthchecks.io](https://healthchecks.io) per ogni webcam, con *Period* uguale all'intervallo di scatto e *Grace time* almeno doppio, e copia il ping URL in **System → Monitoring**. Il router fa un ping dopo ogni foto caricata e un ping `/fail` con il messaggio a ogni errore. Scrive nel registro del check anche gli avvii del servizio (con l'uptime, per vedere i riavvii) e la modalità manutenzione. Se il router si spegne, l'allarme arriva alla fine del grace time.
-- **Log**: OpenWrt può mandare il suo log a un server syslog (**System → System → Logging**). In [`server/`](server/README.md) c'è un `docker-compose.yml` per un VPS con un tunnel WireGuard e VictoriaLogs, con la configurazione passo per passo; sul router basta `central_log setup peer_<nome>.conf`.
+- **Log**: OpenWrt può mandare il suo log a un server syslog (**System → System → Logging**). In [`server/`](server/README.md) c'è un `docker-compose.yml` per un VPS con un tunnel WireGuard e VictoriaLogs, con la configurazione passo per passo; sul router basta `central_log setup peer_<nome>.conf`. Se non ti serve la VPN, [`server/victorialogs/`](server/victorialogs/README.md) ha la versione più semplice: solo VictoriaLogs, con i router che mandano il log direttamente al VPS.
 
 ## Risoluzione dei problemi
 
@@ -231,6 +231,7 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
 ├── board.ino                                  firmware della scheda
 ├── install.sh                                 installazione da release GitHub
 ├── server/                                    VPS: WireGuard + VictoriaLogs (Docker)
+│   └── victorialogs/                          VPS: solo VictoriaLogs, senza VPN
 ├── htdocs/luci-static/resources
 │   ├── view/webcam/                           pagine LuCI
 │   │   ├── status.js                          stato, ultimo scatto, "Scatta ora" e anteprima
