@@ -1,0 +1,130 @@
+#!/bin/sh
+# ---------------------------------------------------
+# Fasce orarie speciali (sezioni "special" di /etc/config/webcam).
+#
+# Uso: schedule [timestamp_unix]
+# Stampa una riga: "<intervallo> <secondi> <nome>"
+#   intervallo  minuti della fascia attiva (la più fitta se più di una),
+#               "-" se nessuna fascia è attiva
+#   secondi     tra quanto inizia o finisce una fascia (entro 24 ore),
+#               "-" se non ce ne sono
+#   nome        nome della fascia attiva (può essere vuoto)
+#
+# Opzioni di ogni fascia:
+#   enabled   1 = attiva
+#   name      nome libero (log e file di dati)
+#   date      vuoto = ogni giorno, MM-GG = ogni anno, AAAA-MM-GG = una volta.
+#             Per una fascia che passa la mezzanotte è il giorno di inizio.
+#   start     HH:MM (ora locale)
+#   end       HH:MM (se minore di start la fascia termina il giorno dopo)
+#   interval  minuti tra gli scatti durante la fascia
+# ---------------------------------------------------
+
+NOW="${1:-$(date +%s)}"
+
+log() { logger -t "webcam schedule" "$@"; }
+
+# "HH:MM" -> minuti dalla mezzanotte (errore se non valido)
+hm_to_min() {
+	local h m
+	case "$1" in
+		[0-9]:[0-5][0-9]|[01][0-9]:[0-5][0-9]|2[0-3]:[0-5][0-9]) ;;
+		*) return 1 ;;
+	esac
+	h="${1%%:*}"; m="${1#*:}"
+	h="${h#0}"; m="${m#0}"
+	echo $(( ${h:-0} * 60 + ${m:-0} ))
+}
+
+# La data della fascia ($1) corrisponde al giorno che contiene $2 (unix)?
+date_matches() {
+	case "$1" in
+		'') return 0 ;;
+		[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9])
+			[ "$1" = "$(date -d "@$2" +%Y-%m-%d)" ] ;;
+		[0-1][0-9]-[0-3][0-9])
+			[ "$1" = "$(date -d "@$2" +%m-%d)" ] ;;
+		*) return 1 ;;
+	esac
+}
+
+set -- $(date -d "@$NOW" +"%H %M %S")
+H="${1#0}"; M="${2#0}"; S="${3#0}"
+T=$(( ${H:-0} * 60 + ${M:-0} ))   # minuti dalla mezzanotte
+SEC=${S:-0}
+YESTERDAY=$(( NOW - 86400 ))
+TOMORROW=$(( NOW + 86400 ))
+
+BEST_INTERVAL=""
+BEST_NAME=""
+NEXT=""
+
+# Tiene il minimo dei secondi al prossimo cambiamento
+next_change() {
+	[ "$1" -gt 0 ] || return
+	if [ -z "$NEXT" ] || [ "$1" -lt "$NEXT" ]; then NEXT="$1"; fi
+}
+
+# Secondi da adesso al minuto $1 di oggi (o di domani se già passato)
+until_minute() {
+	if [ "$1" -gt "$T" ]; then
+		echo $(( ($1 - T) * 60 - SEC ))
+	else
+		echo $(( (1440 - T + $1) * 60 - SEC ))
+	fi
+}
+
+i=0
+while uci -q get "webcam.@special[$i]" >/dev/null; do
+	sec="webcam.@special[$i]"
+	i=$((i + 1))
+
+	[ "$(uci -q get "$sec.enabled")" = 1 ] || continue
+
+	name="$(uci -q get "$sec.name")"
+	date="$(uci -q get "$sec.date")"
+	interval="$(uci -q get "$sec.interval")"
+	start="$(hm_to_min "$(uci -q get "$sec.start")")" || start=""
+	end="$(hm_to_min "$(uci -q get "$sec.end")")" || end=""
+
+	case "$interval" in
+		''|*[!0-9]*|0) interval="" ;;
+	esac
+	if [ -z "$start" ] || [ -z "$end" ] || [ -z "$interval" ] || [ "$start" = "$end" ]; then
+		log "Fascia '${name:-$i}' non valida (start, end, interval): ignorata."
+		continue
+	fi
+
+	active=0
+	if [ "$start" -lt "$end" ]; then
+		[ "$T" -ge "$start" ] && [ "$T" -lt "$end" ] && date_matches "$date" "$NOW" && active=1
+		# Prossimo inizio: oggi se deve ancora arrivare, altrimenti domani
+		if [ "$start" -gt "$T" ]; then
+			date_matches "$date" "$NOW" && next_change "$(until_minute "$start")"
+		else
+			date_matches "$date" "$TOMORROW" && next_change "$(until_minute "$start")"
+		fi
+	else
+		# Passa la mezzanotte: la parte dopo le 00:00 appartiene al giorno prima
+		if [ "$T" -ge "$start" ] && date_matches "$date" "$NOW"; then
+			active=1
+		elif [ "$T" -lt "$end" ] && date_matches "$date" "$YESTERDAY"; then
+			active=1
+		fi
+		if [ "$start" -gt "$T" ]; then
+			date_matches "$date" "$NOW" && next_change "$(until_minute "$start")"
+		else
+			date_matches "$date" "$TOMORROW" && next_change "$(until_minute "$start")"
+		fi
+	fi
+
+	if [ "$active" = 1 ]; then
+		next_change "$(until_minute "$end")"
+		if [ -z "$BEST_INTERVAL" ] || [ "$interval" -lt "$BEST_INTERVAL" ]; then
+			BEST_INTERVAL="$interval"
+			BEST_NAME="$name"
+		fi
+	fi
+done
+
+echo "${BEST_INTERVAL:--} ${NEXT:--} $BEST_NAME"

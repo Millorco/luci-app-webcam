@@ -71,6 +71,14 @@ Le pagine sono in **Servizi → Webcam**. La configurazione è salvata in `/etc/
 
 Mostra la versione dell'app e del firmware della scheda (letta con il comando `v`), temperatura, umidità, punto di rugiada, stato del riscaldamento, ultimo scatto (giorno/notte) ed esito dell'upload. Si aggiorna ogni 30 secondi; i dati della scheda ogni 5 minuti.
 
+Sotto la tabella ci sono tre pulsanti:
+
+- **Take photo now**: scatta subito con le impostazioni attuali e carica la foto come uno scatto normale.
+- **Test shot (no upload)**: scatta ma non carica nulla, per provare esposizione e messa a fuoco.
+- **Show last photo**: mostra l'ultima foto rimasta sul router.
+
+Funzionano anche in modalità manutenzione. Dopo lo scatto la pagina mostra l'anteprima e un link alla foto a piena risoluzione. La foto resta in `/tmp/webcam/photo` solo fino allo scatto successivo, e l'anteprima scarica il file originale, quindi con una reflex da 24 MP può impiegare qualche secondo. Se uno scatto è già in corso (anche quello programmato), il pulsante lo segnala e non ne avvia un altro.
+
 ### System
 
 ![System](screenshot/system_setting.png)
@@ -87,6 +95,8 @@ Mostra la versione dell'app e del firmware della scheda (letta con il comando `v
 
 - **Photo File Name**: prefisso del file (`<prefisso>_AAAAMMGG-HHMM.jpg`).
 - **Photo Time Schedule**: intervallo tra gli scatti, in minuti.
+- **Sunrise / Sunset offset**: minuti (anche negativi) che spostano il passaggio tra impostazioni diurne e notturne. Con *−30* e *+30* le impostazioni diurne valgono da mezz'ora prima dell'alba a mezz'ora dopo il tramonto, quando il cielo è ancora chiaro e le impostazioni notturne brucerebbero la foto.
+- **Special capture times**: fasce orarie con un intervallo diverso, per esempio ogni minuto dalle 23:50 alle 00:10 di Capodanno, o più fitto al tramonto. Per ogni fascia: data (vuota = ogni giorno, `MM-GG` = ogni anno, `AAAA-MM-GG` = una volta sola), inizio e fine `HH:MM` e intervallo in minuti. L'intervallo sostituisce quello normale, quindi può anche diradare gli scatti (es. ogni 30 minuti di notte); se più fasce si sovrappongono vale la più fitta. Una fascia che passa la mezzanotte appartiene al giorno in cui inizia. Il servizio si sveglia all'inizio e alla fine di ogni fascia, così il primo scatto non arriva in ritardo.
 - **Day / Night Settings**: ISO, diaframma e tempo. *Camera setting (do not change)* lascia l'impostazione della fotocamera, comodo in modalità P o Av. Il tempo **bulb** non viene mai applicato.
 
 Consigli per una webcam fissa:
@@ -101,15 +111,40 @@ Consigli per una webcam fissa:
 - **Server, porta, cartella, utente e password**. Per SFTP si può indicare una chiave privata al posto della password.
 - **Skip certificate check**: solo per certificati self-signed. Se il certificato è valido ma intestato a un altro nome (tipico degli hosting condivisi), usa come server il nome presente nel certificato.
 
+Archivio e file aggiuntivi (tutti disattivati di default):
+
+- **Folders by date**: salva ogni foto in `<cartella>/AAAA/MM/GG/`, create in automatico. È lo schema usato da foto-webcam.eu e da gallerie pronte come [webcam.php](https://github.com/cloveras/webcam).
+- **Upload a copy as latest photo**: carica la foto anche come `<cartella>/current.jpg` (nome modificabile), sovrascritta a ogni scatto, comoda da mostrare in una pagina web. La foto viene inviata due volte, quindi il traffico raddoppia. Se solo la copia fallisce, l'esito nella pagina Status lo dice ma la foto in archivio resta caricata.
+- **Upload data file**: accanto a ogni foto carica un `.json` con lo stesso nome, e `current.json` se è attiva la copia. Esempio:
+
+```json
+{
+  "time": 1794058231,
+  "datetime": "2026-11-07T14:30:31+0100",
+  "camera": "webcam",
+  "file": "webcam_20261107-1430.jpg",
+  "mode": "day",
+  "special": null,
+  "settings": { "iso": "100", "aperture": null, "shutterspeed": null },
+  "day_start": 1794028774,
+  "day_end": 1794068884,
+  "app_version": "0.4",
+  "climate": { "time": 1794058200, "sensor_ok": true, "temperature": 12.3, "humidity": 80,
+               "dewpoint": 9.0, "heating_enabled": true, "heater": false, "board_fw": "2.1" }
+}
+```
+
+  `null` nelle impostazioni significa "lasciata quella della fotocamera". `day_start`/`day_end` sono alba e tramonto già spostati dagli offset. `climate` è l'ultima lettura di `climate` (null se più vecchia di 15 minuti). Con questi file il server può fare grafici, sovrimpressioni o allarmi senza interrogare il router.
+
 ## Come funziona
 
-- **`capture_service`** (servizio procd `webcam_capture`): ogni *Photo Time Schedule* minuti lancia `capture`, salvo in modalità manutenzione.
+- **`capture_service`** (servizio procd `webcam_capture`): ogni *Photo Time Schedule* minuti lancia `capture`, salvo in modalità manutenzione. Durante una fascia speciale usa l'intervallo della fascia (calcolato da `/usr/libexec/webcam/schedule`).
 - **`capture`**:
-  1. decide se è giorno o notte con `sun_times`;
+  1. decide se è giorno o notte con `sun_times`, applicando gli offset di alba e tramonto;
   2. spegne il riscaldamento durante lo scatto, per avere abbastanza corrente;
   3. scatta con gphoto2 usando `--set-config-index`;
   4. se lo scatto fallisce, spegne e riaccende la fotocamera tramite la scheda e riprova una volta;
-  5. carica il file e scrive l'esito in `/tmp/webcam/capture.json`.
+  5. carica il file (in `AAAA/MM/GG/` se richiesto), poi il `.json` dei dati e la copia `current.jpg` se attivi, e scrive l'esito in `/tmp/webcam/capture.json`.
 - **`climate`** (cron, ogni 5 minuti): legge T e RH, calcola il punto di rugiada (formula di Magnus) e accende riscaldamento e ventola se `T − Td` è sotto il margine o `T` è sotto la minima, con isteresi per lo spegnimento. Lo stato va in `/tmp/webcam/status.json`. Se il sensore non risponde, lo stato del riscaldamento resta invariato.
 - **`heartbeat`** (cron, ogni 3 minuti): invia `b` alla scheda. Dopo 10 minuti senza heartbeat la scheda spegne e riaccende router e fotocamera.
 - **`/usr/libexec/webcam/serial`**: unico punto di accesso alla seriale, con lock e una pausa di 2 secondi tra un comando e l'altro.
@@ -189,16 +224,17 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
 ├── install.sh                                 installazione da release GitHub
 ├── htdocs/luci-static/resources
 │   ├── view/webcam/                           pagine LuCI
-│   │   ├── status.js                          stato sensore, riscaldamento, ultimo scatto
+│   │   ├── status.js                          stato, ultimo scatto, "Scatta ora" e anteprima
 │   │   ├── system_setting.js                  generale, anti-appannamento, seriale
-│   │   ├── camera_setting.js                  intervallo ed esposizione giorno/notte
-│   │   └── up_server.js                       server di upload
+│   │   ├── camera_setting.js                  intervallo, fasce speciali, esposizione giorno/notte
+│   │   └── up_server.js                       server di upload, archivio, file aggiuntivi
 │   └── webcam/*_data.json                     scelte di ISO/diaframma/tempo (generate)
 └── root
     ├── etc/config/webcam                      configurazione UCI
     ├── etc/init.d/webcam_capture              servizio procd + job cron
     ├── usr/bin/
     │   ├── capture, capture_service           scatto e ciclo di scatto
+    │   ├── capture_now                        scatto manuale dalla pagina Status
     │   ├── climate                            anti-appannamento
     │   ├── heartbeat, serialsend, read_temp   comandi verso la scheda
     │   ├── iso_export, aperture_export,
@@ -208,6 +244,7 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
     │   └── webcam.cfg                         legge la configurazione UCI
     ├── usr/libexec/webcam/
     │   ├── serial                             accesso seriale con lock
+    │   ├── schedule                           fasce orarie speciali
     │   └── sun_times                          calcolo locale di alba e tramonto
     └── usr/share/
         ├── luci/menu.d/luci-app-webcam.json   menu

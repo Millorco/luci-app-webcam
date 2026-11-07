@@ -3,6 +3,10 @@
 #
 # Scatto con fotocamera Canon EOS tramite gphoto2 e upload della foto
 #
+# Uso: capture [--no-upload]
+#   --no-upload  scatto di prova: la foto resta solo sul router
+#                (anteprima nella pagina Status), niente upload
+#
 # ---------------------------------------------------
 
 . /usr/bin/webcam.cfg
@@ -12,26 +16,77 @@ CAPTURE_FLAG="$WC_STATE_DIR/capturing"
 HEATER_STATE="$WC_STATE_DIR/heater"
 CAPTURE_JSON="$WC_STATE_DIR/capture.json"
 WORK_DIR=/tmp/webcam/photo
+LOCK_DIR=/var/lock/webcam_capture.lock
+LOCK_STALE=900        # un lock più vecchio di così è considerato orfano
+
+NO_UPLOAD=0
+case "$1" in
+	--no-upload) NO_UPLOAD=1 ;;
+	'') ;;
+	*) echo "Uso: $0 [--no-upload]" >&2; exit 2 ;;
+esac
 
 mkdir -p "$WORK_DIR"
 cd "$WORK_DIR" || exit 1
 
-NOW_DATE="$(date +"%Y%m%d-%H%M")"
+# Un solo scatto alla volta: il pulsante "Scatta ora" di LuCI e il
+# servizio potrebbero partire insieme e contendersi la fotocamera.
+take_lock() {
+	mkdir "$LOCK_DIR" 2>/dev/null && return 0
+	# Lock rimasto da uno scatto terminato in modo anomalo
+	if [ $(( $(date +%s) - $(date -r "$LOCK_DIR" +%s 2>/dev/null || echo 0) )) -gt "$LOCK_STALE" ]; then
+		rmdir "$LOCK_DIR" 2>/dev/null
+		mkdir "$LOCK_DIR" 2>/dev/null && return 0
+	fi
+	return 1
+}
+if ! take_lock; then
+	logger -t "$WC_NAME capture" "Uno scatto è già in corso: questo viene saltato."
+	echo "Uno scatto è già in corso." >&2
+	exit 3
+fi
+trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
+trap 'exit 1' INT TERM
+
+# Un solo istante di riferimento per nome file, cartelle e dati
+NOW=$(date +%s)
+NOW_DATE="$(date -d "@$NOW" +"%Y%m%d-%H%M")"
 FILENAME="${WC_PHOTO_NAME}_${NOW_DATE}.jpg"
+DATAFILE="${FILENAME%.jpg}.json"
 MODE=""
+SUNRISE=""
+SUNSET=""
+# Nome della fascia oraria speciale attiva (impostato da capture_service)
+SPECIAL="${WC_SPECIAL:-}"
 
 log() {
 	echo "$@" >&2
 	logger -t "$WC_NAME capture" "$@"
 }
 
+# Stringa JSON con escape di \ e " (null se vuota). Gli a capo e le
+# tabulazioni diventano spazi, così un messaggio d'errore non rompe il file.
+json_str() {
+	[ -n "$1" ] || { echo null; return; }
+	printf '"%s"' "$(printf '%s' "$1" | tr '\n\t\r' '   ' | sed 's/\\/\\\\/g; s/"/\\"/g')"
+}
+
+json_num() {
+	case "$1" in
+		''|*[!0-9-]*) echo null ;;
+		*) echo "$1" ;;
+	esac
+}
+
 write_status() {
 	cat > "$CAPTURE_JSON.tmp" <<JSON
 {
   "time": $(date +%s),
-  "mode": "$MODE",
-  "file": "$FILENAME",
-  "result": "$1"
+  "mode": $(json_str "$MODE"),
+  "special": $(json_str "$SPECIAL"),
+  "file": $(json_str "$FILENAME"),
+  "upload": $( [ "$NO_UPLOAD" = 1 ] && echo false || echo true ),
+  "result": $(json_str "$1")
 }
 JSON
 	mv "$CAPTURE_JSON.tmp" "$CAPTURE_JSON"
@@ -46,37 +101,50 @@ fail() {
 # ---------------------------------------------------
 # Giorno o notte? Alba e tramonto sono calcolati in locale
 # dalle coordinate, senza dipendere da servizi esterni.
+# Gli scostamenti (minuti, anche negativi) spostano il passaggio:
+# es. alba -30 e tramonto +30 usano le impostazioni diurne da mezz'ora
+# prima dell'alba a mezz'ora dopo il tramonto, quando il cielo è ancora chiaro.
+# Imposta MODE, SUNRISE e SUNSET (inizio e fine delle impostazioni diurne).
 # ---------------------------------------------------
-day_or_night() {
-	local now sun sunrise sunset
-	now=$(date +%s)
+offset_minutes() {
+	case "$1" in
+		''|-|*[!0-9-]*|?*-*) echo 0 ;;
+		*) echo "$1" ;;
+	esac
+}
 
+day_or_night() {
+	local sun
+
+	MODE=day
 	if [ -z "$WC_LATITUDE" ] || [ -z "$WC_LONGITUDE" ]; then
 		log "Coordinate non impostate: uso le impostazioni diurne."
-		echo day
 		return
 	fi
 
-	sun=$(/usr/libexec/webcam/sun_times "$WC_LATITUDE" "$WC_LONGITUDE" "$now")
+	sun=$(/usr/libexec/webcam/sun_times "$WC_LATITUDE" "$WC_LONGITUDE" "$NOW")
 	case "$sun" in
-		polar_day)   echo day;   return ;;
-		polar_night) echo night; return ;;
+		polar_day)   MODE=day;   return ;;
+		polar_night) MODE=night; return ;;
 	esac
 
-	sunrise=${sun% *}
-	sunset=${sun#* }
-	case "$sunrise$sunset" in
+	SUNRISE=${sun% *}
+	SUNSET=${sun#* }
+	case "$SUNRISE$SUNSET" in
 		''|*[!0-9]*)
 			log "Calcolo alba/tramonto fallito ('$sun'): uso le impostazioni diurne."
-			echo day
+			SUNRISE=""; SUNSET=""
 			return
 			;;
 	esac
 
-	if [ "$now" -ge "$sunrise" ] && [ "$now" -lt "$sunset" ]; then
-		echo day
+	SUNRISE=$(( SUNRISE + $(offset_minutes "$WC_SUNRISE_OFFSET") * 60 ))
+	SUNSET=$(( SUNSET + $(offset_minutes "$WC_SUNSET_OFFSET") * 60 ))
+
+	if [ "$NOW" -ge "$SUNRISE" ] && [ "$NOW" -lt "$SUNSET" ]; then
+		MODE=day
 	else
-		echo night
+		MODE=night
 	fi
 }
 
@@ -86,6 +154,8 @@ day_or_night() {
 # --set-config-index: con --set-config un indice come "1" verrebbe
 # interpretato come etichetta (es. tempo di 1 secondo).
 # ---------------------------------------------------
+ISO_JSON=/www/luci-static/resources/webcam/iso_data.json
+APERTURE_JSON=/www/luci-static/resources/webcam/aperture_data.json
 SHUTTER_JSON=/www/luci-static/resources/webcam/shutterspeed_data.json
 
 # Etichetta della scelta di gphoto2 con indice $2 nel file JSON $1
@@ -133,7 +203,7 @@ camera_power_cycle() {
 }
 
 capture() {
-	local iso aperture shutter rc
+	local rc
 
 	if [ "$MODE" = day ]; then
 		iso="$WC_ISO_DAY"; aperture="$WC_APERTURE_DAY"; shutter="$WC_SHUTTERSPEED_DAY"
@@ -141,7 +211,7 @@ capture() {
 		iso="$WC_ISO_NIGHT"; aperture="$WC_APERTURE_NIGHT"; shutter="$WC_SHUTTERSPEED_NIGHT"
 	fi
 
-	rm -f "$WORK_DIR"/*.jpg 2>/dev/null
+	rm -f "$WORK_DIR"/*.jpg "$WORK_DIR"/*.json 2>/dev/null
 
 	# Spegne il riscaldamento durante lo scatto per avere abbastanza corrente
 	touch "$CAPTURE_FLAG"
@@ -171,20 +241,56 @@ capture() {
 }
 
 # ---------------------------------------------------
-# Upload: ftp, ftps (FTP su TLS) o sftp
+# File di dati accanto alla foto: momento dello scatto, giorno/notte,
+# impostazioni usate e ultimi valori di temperatura e umidità (da climate).
+# Un valore null nelle impostazioni = lasciata quella della fotocamera.
 # ---------------------------------------------------
-upload() {
-	local url port dir
+write_datafile() {
+	local climate="null" status="$WC_STATE_DIR/status.json"
 
-	[ -n "$WC_UPLOAD_SERVER" ] || fail "server di upload non configurato"
+	# Dati ambientali solo se recenti (climate gira ogni 5 minuti)
+	if [ -s "$status" ] && [ $(( $(date +%s) - $(date -r "$status" +%s) )) -lt 900 ]; then
+		climate="$(cat "$status")"
+	fi
+
+	cat > "$WORK_DIR/$DATAFILE" <<JSON
+{
+  "time": $NOW,
+  "datetime": $(json_str "$(date -d "@$NOW" +%Y-%m-%dT%H:%M:%S%z)"),
+  "camera": $(json_str "$WC_NAME"),
+  "file": $(json_str "$FILENAME"),
+  "mode": $(json_str "$MODE"),
+  "special": $(json_str "$SPECIAL"),
+  "settings": {
+    "iso": $(json_str "$(choice_label "$ISO_JSON" "$iso")"),
+    "aperture": $(json_str "$(choice_label "$APERTURE_JSON" "$aperture")"),
+    "shutterspeed": $(json_str "$(choice_label "$SHUTTER_JSON" "$shutter")")
+  },
+  "day_start": $(json_num "$SUNRISE"),
+  "day_end": $(json_num "$SUNSET"),
+  "app_version": $(json_str "$(cat /usr/share/webcam/version 2>/dev/null)"),
+  "climate": $climate
+}
+JSON
+}
+
+# ---------------------------------------------------
+# Upload: ftp, ftps (FTP su TLS) o sftp
+#
+# Sul server:
+#   <cartella>/[AAAA/MM/GG/]<prefisso>_AAAAMMGG-HHMM.jpg   archivio
+#   <cartella>/[AAAA/MM/GG/]<prefisso>_AAAAMMGG-HHMM.json  dati (opzione)
+#   <cartella>/current.jpg, current.json                  ultima foto (opzione)
+# ---------------------------------------------------
+
+# Carica il file locale $1 nel percorso remoto $2 (relativo alla cartella)
+put_file() {
+	local url port base
 
 	port=""
 	[ -n "$WC_UPLOAD_PORT" ] && port=":$WC_UPLOAD_PORT"
-	dir="${WC_UPLOAD_DIRECTORY#/}"
-	dir="${dir%/}"
-	[ -n "$dir" ] && dir="$dir/"
 
-	set -- -s -S --connect-timeout 30 --retry 2 -T "$FILENAME" \
+	set -- "$1" "$2" -s -S --connect-timeout 30 --retry 2 -T "$1" \
 		--user "$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD" --ftp-create-dirs
 
 	case "$WC_UPLOAD_PROTOCOL" in
@@ -192,30 +298,81 @@ upload() {
 			# FTP esplicito su TLS: la connessione deve essere cifrata
 			set -- "$@" --ssl-reqd
 			[ "$WC_UPLOAD_INSECURE" = 1 ] && set -- "$@" --insecure
-			url="ftp://$WC_UPLOAD_SERVER$port/$dir$FILENAME"
+			base="ftp://$WC_UPLOAD_SERVER$port/"
 			;;
 		sftp)
-			curl -V 2>/dev/null | grep -q '^Protocols:.*sftp' || \
-				fail "il curl installato non supporta SFTP (serve curl compilato con libssh2)"
 			[ -n "$WC_UPLOAD_KEY" ] && set -- "$@" --key "$WC_UPLOAD_KEY"
 			[ "$WC_UPLOAD_INSECURE" = 1 ] && set -- "$@" --insecure
 			# "~/" = percorso relativo alla home dell'utente sul server
-			url="sftp://$WC_UPLOAD_SERVER$port/~/$dir$FILENAME"
+			base="sftp://$WC_UPLOAD_SERVER$port/~/"
 			;;
 		*)
-			url="ftp://$WC_UPLOAD_SERVER$port/$dir$FILENAME"
+			base="ftp://$WC_UPLOAD_SERVER$port/"
 			;;
 	esac
 
-	if curl "$@" "$url"; then
-		log "Upload completato: $FILENAME ($MODE, $WC_UPLOAD_PROTOCOL)"
-		write_status ok
-	else
-		fail "upload fallito verso $WC_UPLOAD_PROTOCOL://$WC_UPLOAD_SERVER$port/$dir"
-	fi
+	url="$base$REMOTE_DIR$2"
+	shift 2
+	curl "$@" "$url"
 }
 
-MODE=$(day_or_night)
+upload() {
+	local dir archive latest
+
+	[ -n "$WC_UPLOAD_SERVER" ] || fail "server di upload non configurato"
+
+	if [ "$WC_UPLOAD_PROTOCOL" = sftp ]; then
+		curl -V 2>/dev/null | grep -q '^Protocols:.*sftp' || \
+			fail "il curl installato non supporta SFTP (serve curl compilato con libssh2)"
+	fi
+
+	dir="${WC_UPLOAD_DIRECTORY#/}"
+	dir="${dir%/}"
+	[ -n "$dir" ] && dir="$dir/"
+	REMOTE_DIR="$dir"
+
+	archive=""
+	[ "$WC_UPLOAD_DATE_DIRS" = 1 ] && archive="$(date -d "@$NOW" +%Y/%m/%d)/"
+
+	[ "$WC_UPLOAD_DATA" = 1 ] && write_datafile
+
+	put_file "$FILENAME" "$archive$FILENAME" || \
+		fail "upload fallito verso $WC_UPLOAD_PROTOCOL://$WC_UPLOAD_SERVER/$dir$archive"
+
+	if [ "$WC_UPLOAD_DATA" = 1 ]; then
+		put_file "$DATAFILE" "$archive$DATAFILE" || \
+			log "ATTENZIONE: upload del file di dati $DATAFILE fallito"
+	fi
+
+	log "Upload completato: $archive$FILENAME ($MODE${SPECIAL:+, $SPECIAL}, $WC_UPLOAD_PROTOCOL)"
+
+	# Copia dell'ultima foto con nome fisso, per pagine web e incorporamenti
+	if [ "$WC_UPLOAD_LATEST" = 1 ]; then
+		latest="$WC_UPLOAD_LATEST_NAME"
+		case "$latest" in
+			''|*[!A-Za-z0-9._-]*) latest=current ;;
+		esac
+		latest="${latest%.jpg}"
+		if put_file "$FILENAME" "$latest.jpg"; then
+			[ "$WC_UPLOAD_DATA" = 1 ] && { put_file "$DATAFILE" "$latest.json" || \
+				log "ATTENZIONE: upload di $latest.json fallito"; }
+		else
+			log "ATTENZIONE: upload della copia $latest.jpg fallito"
+			write_status "ok, ma copia $latest.jpg non caricata"
+			return
+		fi
+	fi
+
+	write_status ok
+}
+
+write_status running
+day_or_night
 capture
-upload
+if [ "$NO_UPLOAD" = 1 ]; then
+	log "Scatto di prova senza upload: $FILENAME ($MODE)"
+	write_status test
+else
+	upload
+fi
 exit 0

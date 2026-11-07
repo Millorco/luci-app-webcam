@@ -2,10 +2,13 @@
 
 WC_NAME="$(uci -q get system.@system[0].hostname)"
 LOGTAG="${WC_NAME:-webcam} capture"
+SCHEDULE=/usr/libexec/webcam/schedule
 
 log() {
     logger -t "$LOGTAG" "$@"
 }
+
+LAST_SPECIAL=""
 
 while true; do
     # Read configuration values with fallback defaults
@@ -24,6 +27,26 @@ while true; do
 
     START=$(date +%s)
 
+    # Fascia oraria speciale attiva? Il suo intervallo sostituisce quello normale
+    read -r SP_INTERVAL SP_NEXT SP_NAME <<EOF
+$($SCHEDULE "$START")
+EOF
+    INTERVAL="$WC_TIME_LAPSE"
+    WC_SPECIAL=""
+    if [ -n "$SP_INTERVAL" ] && [ "$SP_INTERVAL" != - ]; then
+        INTERVAL="$SP_INTERVAL"
+        WC_SPECIAL="${SP_NAME:-special}"
+    fi
+    if [ "$WC_SPECIAL" != "$LAST_SPECIAL" ]; then
+        if [ -n "$WC_SPECIAL" ]; then
+            log "Fascia speciale '$WC_SPECIAL': uno scatto ogni $INTERVAL minuti."
+        else
+            log "Fine della fascia speciale '$LAST_SPECIAL': uno scatto ogni $INTERVAL minuti."
+        fi
+        LAST_SPECIAL="$WC_SPECIAL"
+    fi
+    export WC_SPECIAL
+
     # Check maintenance mode
     if [ "$WC_MAINTENANCE_MODE" -eq 0 ]; then
         if ! /usr/bin/capture; then
@@ -35,7 +58,18 @@ while true; do
 
     # Sleep for the rest of the interval, so the shot duration doesn't add up
     ELAPSED=$(( $(date +%s) - START ))
-    REMAINING=$(( WC_TIME_LAPSE * 60 - ELAPSED ))
+    REMAINING=$(( INTERVAL * 60 - ELAPSED ))
     [ "$REMAINING" -lt 10 ] && REMAINING=10
+
+    # Svegliarsi prima se nel frattempo una fascia speciale inizia o finisce
+    read -r SP_INTERVAL SP_NEXT SP_NAME <<EOF
+$($SCHEDULE)
+EOF
+    case "$SP_NEXT" in
+        ''|-|*[!0-9]*) ;;
+        *) [ "$SP_NEXT" -lt "$REMAINING" ] && REMAINING="$SP_NEXT" ;;
+    esac
+    [ "$REMAINING" -lt 1 ] && REMAINING=1
+
     sleep "$REMAINING"
 done
