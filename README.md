@@ -71,6 +71,14 @@ Le pagine sono in **Servizi → Webcam**. La configurazione è salvata in `/etc/
 
 Mostra la versione dell'app e del firmware della scheda (letta con il comando `v`), temperatura, umidità, punto di rugiada, stato del riscaldamento, ultimo scatto (giorno/notte) ed esito dell'upload. Si aggiorna ogni 30 secondi; i dati della scheda ogni 5 minuti.
 
+Sotto la tabella ci sono tre pulsanti:
+
+- **Take photo now**: scatta subito con le impostazioni attuali e carica la foto come uno scatto normale.
+- **Test shot (no upload)**: scatta ma non carica nulla, per provare esposizione e messa a fuoco.
+- **Show last photo**: mostra l'ultima foto rimasta sul router.
+
+Funzionano anche in modalità manutenzione. Dopo lo scatto la pagina mostra l'anteprima e un link alla foto a piena risoluzione. La foto resta in `/tmp/webcam/photo` solo fino allo scatto successivo, e l'anteprima scarica il file originale, quindi con una reflex da 24 MP può impiegare qualche secondo. Se uno scatto è già in corso (anche quello programmato), il pulsante lo segnala e non ne avvia un altro.
+
 ### System
 
 ![System](screenshot/system_setting.png)
@@ -216,7 +224,7 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
 ├── install.sh                                 installazione da release GitHub
 ├── htdocs/luci-static/resources
 │   ├── view/webcam/                           pagine LuCI
-│   │   ├── status.js                          stato sensore, riscaldamento, ultimo scatto
+│   │   ├── status.js                          stato, ultimo scatto, "Scatta ora" e anteprima
 │   │   ├── system_setting.js                  generale, anti-appannamento, seriale
 │   │   ├── camera_setting.js                  intervallo, fasce speciali, esposizione giorno/notte
 │   │   └── up_server.js                       server di upload, archivio, file aggiuntivi
@@ -226,6 +234,7 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
     ├── etc/init.d/webcam_capture              servizio procd + job cron
     ├── usr/bin/
     │   ├── capture, capture_service           scatto e ciclo di scatto
+    │   ├── capture_now                        scatto manuale dalla pagina Status
     │   ├── climate                            anti-appannamento
     │   ├── heartbeat, serialsend, read_temp   comandi verso la scheda
     │   ├── iso_export, aperture_export,

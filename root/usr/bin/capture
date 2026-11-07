@@ -3,6 +3,10 @@
 #
 # Scatto con fotocamera Canon EOS tramite gphoto2 e upload della foto
 #
+# Uso: capture [--no-upload]
+#   --no-upload  scatto di prova: la foto resta solo sul router
+#                (anteprima nella pagina Status), niente upload
+#
 # ---------------------------------------------------
 
 . /usr/bin/webcam.cfg
@@ -12,9 +16,37 @@ CAPTURE_FLAG="$WC_STATE_DIR/capturing"
 HEATER_STATE="$WC_STATE_DIR/heater"
 CAPTURE_JSON="$WC_STATE_DIR/capture.json"
 WORK_DIR=/tmp/webcam/photo
+LOCK_DIR=/var/lock/webcam_capture.lock
+LOCK_STALE=900        # un lock più vecchio di così è considerato orfano
+
+NO_UPLOAD=0
+case "$1" in
+	--no-upload) NO_UPLOAD=1 ;;
+	'') ;;
+	*) echo "Uso: $0 [--no-upload]" >&2; exit 2 ;;
+esac
 
 mkdir -p "$WORK_DIR"
 cd "$WORK_DIR" || exit 1
+
+# Un solo scatto alla volta: il pulsante "Scatta ora" di LuCI e il
+# servizio potrebbero partire insieme e contendersi la fotocamera.
+take_lock() {
+	mkdir "$LOCK_DIR" 2>/dev/null && return 0
+	# Lock rimasto da uno scatto terminato in modo anomalo
+	if [ $(( $(date +%s) - $(date -r "$LOCK_DIR" +%s 2>/dev/null || echo 0) )) -gt "$LOCK_STALE" ]; then
+		rmdir "$LOCK_DIR" 2>/dev/null
+		mkdir "$LOCK_DIR" 2>/dev/null && return 0
+	fi
+	return 1
+}
+if ! take_lock; then
+	logger -t "$WC_NAME capture" "Uno scatto è già in corso: questo viene saltato."
+	echo "Uno scatto è già in corso." >&2
+	exit 3
+fi
+trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
+trap 'exit 1' INT TERM
 
 # Un solo istante di riferimento per nome file, cartelle e dati
 NOW=$(date +%s)
@@ -53,6 +85,7 @@ write_status() {
   "mode": $(json_str "$MODE"),
   "special": $(json_str "$SPECIAL"),
   "file": $(json_str "$FILENAME"),
+  "upload": $( [ "$NO_UPLOAD" = 1 ] && echo false || echo true ),
   "result": $(json_str "$1")
 }
 JSON
@@ -333,7 +366,13 @@ upload() {
 	write_status ok
 }
 
+write_status running
 day_or_night
 capture
-upload
+if [ "$NO_UPLOAD" = 1 ]; then
+	log "Scatto di prova senza upload: $FILENAME ($MODE)"
+	write_status test
+else
+	upload
+fi
 exit 0

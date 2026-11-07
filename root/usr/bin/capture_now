@@ -1,0 +1,22 @@
+#!/bin/sh
+# ---------------------------------------------------
+# Scatto manuale dal pulsante "Scatta ora" della pagina Status di LuCI.
+#
+# Uso: capture_now [--no-upload]
+# Avvia capture in background e torna subito: LuCI segue l'esito
+# leggendo /tmp/webcam/capture.json. Funziona anche in modalità
+# manutenzione, così si possono provare le impostazioni.
+# ---------------------------------------------------
+
+case "$1" in
+	''|--no-upload) ;;
+	*) echo "Uso: $0 [--no-upload]" >&2; exit 2 ;;
+esac
+
+if [ -d /var/lock/webcam_capture.lock ]; then
+	echo busy
+	exit 1
+fi
+
+/usr/bin/capture $1 </dev/null >/dev/null 2>&1 &
+echo started

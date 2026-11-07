@@ -3,9 +3,18 @@
     "description": "Grant UCI and file access to LuCI app Webcam",
     "read": {
       "file": {
-        "/tmp/webcam/status.json": [ "read" ],
-        "/tmp/webcam/capture.json": [ "read" ],
-        "/usr/share/webcam/version": [ "read" ]
+        "/tmp/webcam/status.json": [
+          "read"
+        ],
+        "/tmp/webcam/capture.json": [
+          "read"
+        ],
+        "/usr/share/webcam/version": [
+          "read"
+        ],
+        "/tmp/webcam/photo/*": [
+          "read"
+        ]
       },
       "uci": [
         "webcam"
@@ -14,7 +23,15 @@
     "write": {
       "uci": [
         "webcam"
-      ]
+      ],
+      "file": {
+        "/usr/bin/capture_now": [
+          "exec"
+        ],
+        "/usr/bin/capture_now *": [
+          "exec"
+        ]
+      }
     }
   }
 }
