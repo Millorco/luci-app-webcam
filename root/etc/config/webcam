@@ -17,6 +17,8 @@ config general 'general'
 config shooting 'shooting'
         option photo_name 'raw'
         option photo_time_lapse '10'
+        option sunrise_offset '0'
+        option sunset_offset '0'
 
 config day 'day'
         option iso_day ''
@@ -34,4 +36,19 @@ config server 'server'
         option upload_directory 'photos'
         option upload_username 'user'
         option upload_password 'passw'
+        option upload_date_dirs '0'
+        option upload_latest '0'
+        option upload_latest_name 'current'
+        option upload_data '0'
+
+# Fasce orarie con un intervallo di scatto diverso (es. Capodanno).
+# date: vuoto = ogni giorno, MM-GG = ogni anno, AAAA-MM-GG = una volta;
+# per una fascia che passa la mezzanotte è il giorno in cui inizia.
+config special
+        option enabled '0'
+        option name 'Capodanno'
+        option date '12-31'
+        option start '23:50'
+        option end '00:10'
+        option interval '1'
 

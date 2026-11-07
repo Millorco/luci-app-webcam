@@ -41,6 +41,34 @@ return view.extend({
 		o.depends('upload_protocol', 'ftps');
 		o.depends('upload_protocol', 'sftp');
 
+		s = m.section(form.TypedSection, 'server', _('Archive and extra files'));
+		s.anonymous = true;
+
+		o = s.option(form.Flag, 'upload_date_dirs', _('Folders by date'),
+			_('Save each photo in a YYYY/MM/DD subfolder of the directory (created automatically).'));
+		o.default = o.disabled;
+		o.rmempty = false;
+
+		o = s.option(form.Flag, 'upload_latest', _('Upload a copy as latest photo'),
+			_('Also upload every photo to the directory with a fixed name, overwriting the previous one. Useful for web pages. The photo is sent twice, so it doubles the traffic.'));
+		o.default = o.disabled;
+		o.rmempty = false;
+
+		o = s.option(form.Value, 'upload_latest_name', _('Latest photo name'),
+			_('File name without extension (.jpg is added).'));
+		o.placeholder = 'current';
+		o.depends('upload_latest', '1');
+		o.validate = function(section_id, value) {
+			if (value === '' || /^[A-Za-z0-9._-]+$/.test(value))
+				return true;
+			return _('Use only letters, numbers, dot, dash and underscore.');
+		};
+
+		o = s.option(form.Flag, 'upload_data', _('Upload data file'),
+			_('Upload a .json file next to each photo with time, day/night mode, exposure, temperature, humidity, dew point and heater state.'));
+		o.default = o.disabled;
+		o.rmempty = false;
+
 		return m.render();
 	},
 });

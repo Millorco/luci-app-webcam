@@ -66,7 +66,7 @@ return view.extend({
 
 			if (cap) {
 				rows.push(row(_('Last photo'), fmtTime(cap.time) + ' - ' + (cap.file || '')));
-				rows.push(row(_('Mode'), cap.mode === 'night' ? _('Night') : _('Day')));
+				rows.push(row(_('Mode'), (cap.mode === 'night' ? _('Night') : _('Day')) + (cap.special ? ' (' + cap.special + ')' : '')));
 				rows.push(row(_('Result'), cap.result === 'ok' ? _('OK') : cap.result));
 			} else {
 				rows.push(row(_('Last photo'), _('No photo taken yet')));
