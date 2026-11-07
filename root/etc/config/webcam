@@ -13,6 +13,7 @@ config general 'general'
         option heat_fan '1'
         option serial_port '/dev/ttyS1'
         option baud_rates '9600'
+        option ping_url ''
 
 config shooting 'shooting'
         option photo_name 'raw'

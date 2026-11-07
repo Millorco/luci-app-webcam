@@ -3,12 +3,19 @@
 WC_NAME="$(uci -q get system.@system[0].hostname)"
 LOGTAG="${WC_NAME:-webcam} capture"
 SCHEDULE=/usr/libexec/webcam/schedule
+PING=/usr/libexec/webcam/hc_ping
 
 log() {
     logger -t "$LOGTAG" "$@"
 }
 
 LAST_SPECIAL=""
+LAST_MAINT=""
+
+# Avvio del servizio (anche dopo un riavvio del router): una riga nel
+# registro del check con l'uptime, così i riavvii inattesi si vedono.
+UPTIME=$(cut -d. -f1 /proc/uptime)
+"$PING" -w log "${WC_NAME:-webcam}: servizio avviato, router acceso da $UPTIME s" </dev/null >/dev/null 2>&1 &
 
 while true; do
     # Read configuration values with fallback defaults
@@ -24,6 +31,17 @@ while true; do
     esac
 
     [ -z "$WC_MAINTENANCE_MODE" ] && WC_MAINTENANCE_MODE=0
+
+    # In manutenzione non si scatta, quindi il check andrà in allarme:
+    # lo si segnala nel registro del check quando cambia lo stato.
+    if [ "$WC_MAINTENANCE_MODE" != "$LAST_MAINT" ]; then
+        if [ "$WC_MAINTENANCE_MODE" = 1 ]; then
+            "$PING" log "${WC_NAME:-webcam}: modalità manutenzione attiva, nessuno scatto" </dev/null >/dev/null 2>&1 &
+        elif [ -n "$LAST_MAINT" ]; then
+            "$PING" log "${WC_NAME:-webcam}: modalità manutenzione terminata" </dev/null >/dev/null 2>&1 &
+        fi
+        LAST_MAINT="$WC_MAINTENANCE_MODE"
+    fi
 
     START=$(date +%s)
 
