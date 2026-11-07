@@ -28,59 +28,62 @@ Per ogni peer viene creato `wireguard/peer_<nome>/peer_<nome>.conf`, con chiavi 
 
 Per aggiungere un router più avanti, aggiungi il nome in fondo a `PEERS` e rilancia `docker compose up -d`: i peer esistenti restano uguali.
 
-## 2. Router: tunnel WireGuard
+## 2. Router: tunnel e log remoto
 
-Installa i pacchetti (sulla GL-MT300N-V2 servono circa 1 MB di flash):
+Installa WireGuard (sui firmware GL.iNet di solito c'è già):
 
 ```sh
 opkg update && opkg install wireguard-tools kmod-wireguard
 ```
 
-Dal file `peer_webcam1.conf` del VPS copia `PrivateKey` e `Address` della sezione `[Interface]`, e `PublicKey`, `PresharedKey` ed `Endpoint` della sezione `[Peer]`, poi:
+Copia sul router il file `peer_webcam1.conf` del VPS, per esempio con `scp -O peer_webcam1.conf root@<router>:/tmp/`, poi:
 
 ```sh
-uci set network.wg0=interface
-uci set network.wg0.proto='wireguard'
-uci set network.wg0.private_key='<PrivateKey>'
-uci add_list network.wg0.addresses='10.13.13.2/32'      # Address del peer
-
-uci add network wireguard_wg0
-uci set network.@wireguard_wg0[-1].description='vps'
-uci set network.@wireguard_wg0[-1].public_key='<PublicKey del server>'
-uci set network.@wireguard_wg0[-1].preshared_key='<PresharedKey>'
-uci set network.@wireguard_wg0[-1].endpoint_host='vps.example.com'
-uci set network.@wireguard_wg0[-1].endpoint_port='51820'
-uci set network.@wireguard_wg0[-1].persistent_keepalive='25'
-uci set network.@wireguard_wg0[-1].route_allowed_ips='1'
-uci add_list network.@wireguard_wg0[-1].allowed_ips='10.13.13.0/24'
-
-uci commit network
-/etc/init.d/network reload
+central_log setup /tmp/peer_webcam1.conf
+central_log status
+rm /tmp/peer_webcam1.conf
 ```
 
-Verifica con `wg show` (deve comparire un `latest handshake`) e `ping 10.13.13.1`.
+`central_log setup`:
+- crea l'interfaccia WireGuard `wglog` con le chiavi del file e il keepalive a 25 secondi;
+- instrada nel tunnel solo la rete del tunnel (`10.13.13.0/24`), mai tutto il traffico;
+- manda il log del router a `10.13.13.1:514` via TCP (opzioni `log_ip`, `log_port`, `log_proto` di **System → System → Logging**).
 
-Il traffico verso Internet non passa dal tunnel: nel tunnel va solo la rete `10.13.13.0/24`. Il router non accetta connessioni in ingresso dal tunnel, perché `wg0` non è in nessuna zona del firewall; il traffico in uscita dal router è comunque permesso.
+L'IP del syslog si può cambiare con un secondo argomento. `central_log off` toglie tunnel e log remoto. Il router non accetta connessioni in ingresso dal tunnel, perché `wglog` non è in nessuna zona del firewall.
 
-## 3. Router: log remoto
+`central_log status` mostra l'ultimo handshake e se il server risponde. Prova con `logger -t test "ciao dal router"`.
 
-OpenWrt manda già il suo log a un server syslog, basta indicarlo. Da LuCI: **System → System → Logging**, con *External system log server* `10.13.13.1`, porta `514` e protocollo `TCP`. Oppure:
+Il nome con cui il router compare nei log è il suo hostname (**System → System → Hostname**): dagli un nome diverso per ogni webcam.
+
+Attenzione: i messaggi scritti durante l'avvio, prima che il tunnel sia su, possono andare persi o arrivare in ritardo.
+
+<details>
+<summary>Configurazione a mano, senza lo script</summary>
 
 ```sh
+uci set network.wglog=interface
+uci set network.wglog.proto='wireguard'
+uci set network.wglog.private_key='<PrivateKey>'
+uci add_list network.wglog.addresses='10.13.13.2/32'
+uci add network wireguard_wglog
+uci set network.@wireguard_wglog[-1].public_key='<PublicKey del server>'
+uci set network.@wireguard_wglog[-1].preshared_key='<PresharedKey>'
+uci set network.@wireguard_wglog[-1].endpoint_host='vps.example.com'
+uci set network.@wireguard_wglog[-1].endpoint_port='51820'
+uci set network.@wireguard_wglog[-1].persistent_keepalive='25'
+uci set network.@wireguard_wglog[-1].route_allowed_ips='1'
+uci add_list network.@wireguard_wglog[-1].allowed_ips='10.13.13.0/24'
+uci commit network
 uci set system.@system[0].log_ip='10.13.13.1'
 uci set system.@system[0].log_port='514'
 uci set system.@system[0].log_proto='tcp'
 uci commit system
-/etc/init.d/log restart
+/etc/init.d/network reload; /etc/init.d/log restart
 ```
 
-Il nome con cui il router compare nei log è il suo hostname (**System → System → Hostname**): dagli un nome diverso per ogni webcam.
+</details>
 
-Prova con `logger -t test "ciao dal router"`.
-
-Attenzione: i messaggi scritti durante l'avvio, prima che il tunnel sia su, possono andare persi o arrivare in ritardo.
-
-## 4. Consultare i log
+## 3. Consultare i log
 
 L'interfaccia di VictoriaLogs è su `http://10.13.13.1:9428/select/vmui/` dal peer `pc`, oppure, senza tunnel, con un tunnel SSH verso il VPS:
 
@@ -98,7 +101,7 @@ Query utili ([LogsQL](https://docs.victoriametrics.com/victorialogs/logsql/)):
 | `_time:24h ERRORE` | gli errori di scatto e upload dell'ultimo giorno |
 | `_time:7d "servizio avviato"` | gli avvii del servizio, quindi anche i riavvii del router |
 
-## 5. Avvisi con healthchecks.io
+## 4. Avvisi con healthchecks.io
 
 1. Su [healthchecks.io](https://healthchecks.io) crea un check per ogni webcam, con lo stesso nome del router.
 2. **Period**: l'intervallo di scatto (*Photo Time Schedule*). **Grace time**: almeno il doppio, così un singolo scatto saltato non manda allarmi.

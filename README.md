@@ -204,7 +204,7 @@ Poi registra con timestamp ogni comando ricevuto e ogni cambio dei relè, e ogni
 ## Monitoraggio e log centralizzati
 
 - **Avvisi**: crea un check su [healthchecks.io](https://healthchecks.io) per ogni webcam, con *Period* uguale all'intervallo di scatto e *Grace time* almeno doppio, e copia il ping URL in **System → Monitoring**. Il router fa un ping dopo ogni foto caricata e un ping `/fail` con il messaggio a ogni errore. Scrive nel registro del check anche gli avvii del servizio (con l'uptime, per vedere i riavvii) e la modalità manutenzione. Se il router si spegne, l'allarme arriva alla fine del grace time.
-- **Log**: OpenWrt può mandare il suo log a un server syslog (**System → System → Logging**). In [`server/`](server/README.md) c'è un `docker-compose.yml` per un VPS con un tunnel WireGuard e VictoriaLogs, con la configurazione dei router passo per passo.
+- **Log**: OpenWrt può mandare il suo log a un server syslog (**System → System → Logging**). In [`server/`](server/README.md) c'è un `docker-compose.yml` per un VPS con un tunnel WireGuard e VictoriaLogs, con la configurazione passo per passo; sul router basta `central_log setup peer_<nome>.conf`.
 
 ## Risoluzione dei problemi
 
@@ -244,6 +244,7 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
     ├── usr/bin/
     │   ├── capture, capture_service           scatto e ciclo di scatto
     │   ├── capture_now                        scatto manuale dalla pagina Status
+    │   ├── central_log                        tunnel WireGuard e log remoto
     │   ├── climate                            anti-appannamento
     │   ├── heartbeat, serialsend, read_temp   comandi verso la scheda
     │   ├── iso_export, aperture_export,
