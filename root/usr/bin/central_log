@@ -1,7 +1,7 @@
 #!/bin/sh
 # ---------------------------------------------------
 # Log centralizzati: tunnel WireGuard verso il VPS e syslog remoto
-# (vedi server/README.md).
+# (vedi https://github.com/Millorco/webcam-logserver).
 #
 # Uso:
 #   central_log setup <peer.conf> [ip_syslog]
