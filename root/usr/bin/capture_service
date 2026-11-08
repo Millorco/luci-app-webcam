@@ -12,10 +12,73 @@ log() {
 LAST_SPECIAL=""
 LAST_MAINT=""
 
+# ---------------------------------------------------
+# Attesa dell'ora giusta. Il router non ha un orologio a batteria: dopo
+# un riavvio (anche un ciclo del watchdog) l'ora riparte da quella
+# dell'ultimo file salvato in flash. Uno scatto in quel momento avrebbe
+# data e ora vecchie: finirebbe nella cartella sbagliata, userebbe le
+# impostazioni del giorno o della notte a caso e potrebbe sovrascrivere
+# sul server una foto già caricata con lo stesso nome.
+# Il flag è creato da /etc/hotplug.d/ntp/25-webcam quando sysntpd
+# sincronizza l'ora.
+# ---------------------------------------------------
+NTP_FLAG=/var/run/webcam_ntp_synced
+MIN_YEAR=2025   # un anno precedente vuol dire orologio certamente sbagliato
+
+clock_plausible() {
+    [ "$(date +%Y)" -ge "$MIN_YEAR" ]
+}
+
+ntp_client_enabled() {
+    [ "$(uci -q get system.ntp.enabled)" != 0 ] && [ -n "$(uci -q get system.ntp.server)" ]
+}
+
+wait_for_clock() {
+    local wait waited=0 warned=0
+
+    [ -f "$NTP_FLAG" ] && return 0
+
+    if ! ntp_client_enabled; then
+        if clock_plausible; then
+            log "Client NTP disattivato: non attendo la sincronizzazione dell'ora."
+            return 0
+        fi
+        log "Client NTP disattivato e ora del router non valida ($(date)): attivalo in Sistema > Sistema."
+    fi
+
+    # Minuti massimi di attesa; 0 = attende senza limite
+    wait="$(uci -q get webcam.@general[0].ntp_wait)"
+    case "$wait" in
+        ''|*[!0-9]*) wait=30 ;;
+    esac
+
+    log "Attendo la sincronizzazione dell'ora con NTP prima di scattare (ora attuale $(date '+%Y-%m-%d %H:%M'))."
+    while [ ! -f "$NTP_FLAG" ]; do
+        if [ "$wait" -gt 0 ] && [ "$waited" -ge $(( wait * 60 )) ]; then
+            if clock_plausible; then
+                log "ATTENZIONE: ora non sincronizzata dopo $wait minuti, scatto comunque: data e ora delle foto potrebbero essere sbagliate."
+                "$PING" log "${WC_NAME:-webcam}: ora non sincronizzata con NTP dopo $wait minuti, scatto comunque" </dev/null >/dev/null 2>&1 &
+                return 1
+            fi
+            if [ "$warned" = 0 ]; then
+                log "Ora del router non valida ($(date)) e nessuna risposta NTP: non scatto finché l'ora non è corretta."
+                warned=1
+            fi
+        fi
+        sleep 10
+        waited=$(( waited + 10 ))
+    done
+
+    log "Ora sincronizzata con NTP dopo $waited s: $(date '+%Y-%m-%d %H:%M')."
+    return 0
+}
+
 # Avvio del servizio (anche dopo un riavvio del router): una riga nel
 # registro del check con l'uptime, così i riavvii inattesi si vedono.
 UPTIME=$(cut -d. -f1 /proc/uptime)
 "$PING" -w log "${WC_NAME:-webcam}: servizio avviato, router acceso da $UPTIME s" </dev/null >/dev/null 2>&1 &
+
+wait_for_clock
 
 while true; do
     # Read configuration values with fallback defaults
@@ -63,7 +126,9 @@ EOF
         fi
         LAST_SPECIAL="$WC_SPECIAL"
     fi
-    export WC_SPECIAL
+    # capture limita a metà intervallo il tempo per svuotare la coda di upload
+    WC_INTERVAL="$INTERVAL"
+    export WC_SPECIAL WC_INTERVAL
 
     # Check maintenance mode
     if [ "$WC_MAINTENANCE_MODE" -eq 0 ]; then

@@ -87,6 +87,7 @@ Funzionano anche in modalità manutenzione. Dopo lo scatto la pagina mostra l'an
 
 - **Maintenance Mode**: con *Yes* il servizio non scatta. Dopo l'installazione è attivo: mettilo su *No* quando hai finito di configurare.
 - **Latitudine / Longitudine**: servono per calcolare alba e tramonto.
+- **Wait for NTP**: minuti massimi di attesa della sincronizzazione dell'ora dopo un riavvio (predefinito 30, 0 = senza limite). Vedi [Ora dopo un riavvio](#ora-dopo-un-riavvio).
 - **Temperature scale**: °C o °F nella pagina Status.
 - **Anti-fog Heating**: abilita il controllo automatico e ne imposta le soglie (margine dal punto di rugiada, temperatura minima, isteresi, ventola insieme al riscaldamento).
 - **Monitoring**: URL di ping di [healthchecks.io](https://healthchecks.io), vedi [Monitoraggio e log centralizzati](#monitoraggio-e-log-centralizzati).
@@ -117,7 +118,7 @@ Consigli per una webcam fissa:
 Archivio e file aggiuntivi (tutti disattivati di default):
 
 - **Folders by date**: salva ogni foto in `<cartella>/AAAA/MM/GG/`, create in automatico. È lo schema usato da foto-webcam.eu e da gallerie pronte come [webcam.php](https://github.com/cloveras/webcam).
-- **Upload a copy as latest photo**: carica la foto anche come `<cartella>/current.jpg` (nome modificabile), sovrascritta a ogni scatto, comoda da mostrare in una pagina web. La foto viene inviata due volte, quindi il traffico raddoppia. Se solo la copia fallisce, l'esito nella pagina Status lo dice ma la foto in archivio resta caricata.
+- **Upload a copy as latest photo**: carica la foto anche come `<cartella>/current.jpg` (nome modificabile), sostituita a ogni scatto, comoda da mostrare in una pagina web. Viaggia come `current.jpg.part` e viene rinominata solo a upload finito, quindi chi apre la pagina vede sempre una foto intera (per un istante, tra la cancellazione della vecchia e la rinomina, il file può mancare). La foto viene inviata due volte, quindi il traffico raddoppia. Se solo la copia fallisce, l'esito nella pagina Status lo dice ma la foto in archivio resta caricata.
 - **Upload data file**: accanto a ogni foto carica un `.json` con lo stesso nome, e `current.json` se è attiva la copia. Esempio:
 
 ```json
@@ -139,15 +140,29 @@ Archivio e file aggiuntivi (tutti disattivati di default):
 
   `null` nelle impostazioni significa "lasciata quella della fotocamera". `day_start`/`day_end` sono alba e tramonto già spostati dagli offset. `climate` è l'ultima lettura di `climate` (null se più vecchia di 15 minuti). Con questi file il server può fare grafici, sovrimpressioni o allarmi senza interrogare il router.
 
+Coda offline:
+
+- **Queue size (MB)**: le foto che non si riescono a caricare (4G assente, server giù) restano sul router e vengono ritentate agli scatti successivi, dopo la foto nuova e dalla più vecchia, ognuna nella cartella del giorno in cui è stata scattata. Ogni giro dedica alla coda al massimo metà intervallo (e non più di 5 minuti), e si ferma al primo upload fallito. Quando la coda supera il limite, o nel filesystem restano meno di 8 MB liberi, vengono cancellate le foto più vecchie; la più recente resta sempre. Predefinito 20 MB, 0 disattiva la coda. La pagina Status mostra quante foto sono in attesa.
+- **Queue folder**: vuota = `/tmp/webcam/queue`, in RAM, persa a ogni riavvio. Con 128 MB di RAM ci stanno due o tre foto da 24 MP. Per una coda più lunga usa una chiavetta USB: crea prima la cartella (es. `/mnt/sda1/webcam-queue`) e indicala qui. Se la cartella non esiste, per esempio perché la chiavetta non è montata, la coda torna in RAM, così non si scrive nella flash del router.
+
+### Ora dopo un riavvio
+
+Il GL-MT300N-V2 non ha un orologio a batteria: dopo ogni riavvio, compresi i cicli del watchdog e i blackout, l'ora riparte da quella dell'ultimo file salvato in flash. Per non caricare foto con data vecchia, che finirebbero nella cartella sbagliata e potrebbero sovrascrivere sul server una foto con lo stesso nome, all'avvio `capture_service` non scatta finché `sysntpd` non ha sincronizzato l'ora. Lo segnala `/etc/hotplug.d/ntp/25-webcam`, che crea `/var/run/webcam_ntp_synced`.
+
+- Se dopo *Wait for NTP* minuti l'ora non è ancora sincronizzata, scatta comunque, lo scrive nel log e nel registro del check di healthchecks.io.
+- Se l'anno è precedente al 2025 l'ora è sicuramente sbagliata: non scatta finché non arriva NTP, e anche "Take photo now" rifiuta l'upload (lo scatto di prova funziona).
+- Se il client NTP è disattivato in *Sistema → Sistema → Sincronizzazione dell'ora*, non aspetta. Lascialo attivo.
+
 ## Come funziona
 
-- **`capture_service`** (servizio procd `webcam_capture`): ogni *Photo Time Schedule* minuti lancia `capture`, salvo in modalità manutenzione. Durante una fascia speciale usa l'intervallo della fascia (calcolato da `/usr/libexec/webcam/schedule`).
+- **`capture_service`** (servizio procd `webcam_capture`): all'avvio aspetta che l'ora sia sincronizzata con NTP, poi ogni *Photo Time Schedule* minuti lancia `capture`, salvo in modalità manutenzione. Durante una fascia speciale usa l'intervallo della fascia (calcolato da `/usr/libexec/webcam/schedule`).
 - **`capture`**:
   1. decide se è giorno o notte con `sun_times`, applicando gli offset di alba e tramonto;
   2. spegne il riscaldamento durante lo scatto, per avere abbastanza corrente;
   3. scatta con gphoto2 usando `--set-config-index`;
   4. se lo scatto fallisce, spegne e riaccende la fotocamera tramite la scheda e riprova una volta;
-  5. carica il file (in `AAAA/MM/GG/` se richiesto), poi il `.json` dei dati e la copia `current.jpg` se attivi, e scrive l'esito in `/tmp/webcam/capture.json`.
+  5. mette la foto nella coda offline e la carica (in `AAAA/MM/GG/` se richiesto) con il suo `.json` dei dati, poi la copia `current.jpg` con nome temporaneo e rinomina;
+  6. se l'upload è riuscito toglie la foto dalla coda e ritenta quelle arretrate, poi scrive l'esito e il numero di foto in coda in `/tmp/webcam/capture.json`.
 - **`climate`** (cron, ogni 5 minuti): legge T e RH, calcola il punto di rugiada (formula di Magnus) e accende riscaldamento e ventola se `T − Td` è sotto il margine o `T` è sotto la minima, con isteresi per lo spegnimento. Lo stato va in `/tmp/webcam/status.json`. Se il sensore non risponde, lo stato del riscaldamento resta invariato.
 - **`heartbeat`** (cron, ogni 3 minuti): invia `b` alla scheda. Dopo 10 minuti senza heartbeat la scheda spegne e riaccende router e fotocamera.
 - **`/usr/libexec/webcam/serial`**: unico punto di accesso alla seriale, con lock e una pausa di 2 secondi tra un comando e l'altro.
@@ -212,6 +227,8 @@ Poi registra con timestamp ogni comando ricevuto e ogni cambio dei relè, e ogni
 |---|---|---|
 | `serial query d` non risponde | Scheda ferma o collegamento TX1 | Monitor FTDI: deve comparire il log di avvio. Controlla 3,3 V sul pin 1 di TX1 e i fili TX/RX incrociati. |
 | `t`/`u` rispondono `ERR`, log "SDA=0 SCL=0" | Sensore non alimentato, cavo invertito (Grove) o sensore guasto | Scollega il sensore: se SDA/SCL tornano a 1 il problema è nel sensore o nel cavo. |
+| Dopo un riavvio non scatta, log "Attendo la sincronizzazione dell'ora" | NTP non raggiungibile (rete assente o porta UDP 123 bloccata) | Controlla la connessione e il client NTP in *Sistema → Sistema*. Dopo *Wait for NTP* minuti scatta comunque. |
+| Foto in coda che non si svuota | Upload che fallisce, o coda più grande di quanto si carica in mezzo intervallo | Guarda l'errore nell'esito dello scatto. Su 4G lento riduci la dimensione JPEG della fotocamera o allunga l'intervallo. |
 | Scatti con "PTP Device Busy" | Autofocus che non aggancia | Obiettivo su **MF**. |
 | Scatti con "I/O in progress" / "PTP General Error" | Tempo impostato su bulb o fotocamera bloccata | Imposta un tempo reale. La fotocamera viene riavviata in automatico. |
 | FTPS: "certificate Common Name does not match" | Hosting condiviso con certificato a nome del server | Usa come server il nome del certificato (es. `ftplnxNN.aruba.it`). |
@@ -240,6 +257,7 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
 └── root
     ├── etc/config/webcam                      configurazione UCI
     ├── etc/init.d/webcam_capture              servizio procd + job cron
+    ├── etc/hotplug.d/ntp/25-webcam            segnala l'ora sincronizzata con NTP
     ├── usr/bin/
     │   ├── capture, capture_service           scatto e ciclo di scatto
     │   ├── capture_now                        scatto manuale dalla pagina Status

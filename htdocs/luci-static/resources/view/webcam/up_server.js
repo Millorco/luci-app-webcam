@@ -50,7 +50,7 @@ return view.extend({
 		o.rmempty = false;
 
 		o = s.option(form.Flag, 'upload_latest', _('Upload a copy as latest photo'),
-			_('Also upload every photo to the directory with a fixed name, overwriting the previous one. Useful for web pages. The photo is sent twice, so it doubles the traffic.'));
+			_('Also upload every photo to the directory with a fixed name, replacing the previous one. Useful for web pages. The file is uploaded with a temporary name and renamed when complete, so a page never shows a truncated image. The photo is sent twice, so it doubles the traffic.'));
 		o.default = o.disabled;
 		o.rmempty = false;
 
@@ -68,6 +68,24 @@ return view.extend({
 			_('Upload a .json file next to each photo with time, day/night mode, exposure, temperature, humidity, dew point and heater state.'));
 		o.default = o.disabled;
 		o.rmempty = false;
+
+		s = m.section(form.TypedSection, 'server', _('Offline queue'),
+			_('Photos that cannot be uploaded (no mobile signal, server down) are kept and sent again at the next shots, after the new photo. When the queue is full the oldest photos are deleted.'));
+		s.anonymous = true;
+
+		o = s.option(form.Value, 'queue_size', _('Queue size (MB)'),
+			_('0 disables the queue. In the router RAM keep it small (about 20 MB, two or three photos at 24 MP); use a USB stick for more.'));
+		o.datatype = 'uinteger';
+		o.placeholder = '20';
+
+		o = s.option(form.Value, 'queue_dir', _('Queue folder'),
+			_('Leave empty to use the RAM (/tmp/webcam/queue, lost at reboot). For a USB stick enter a folder on it, for example /mnt/sda1/webcam-queue, and create it first: if it does not exist the RAM is used.'));
+		o.placeholder = '/tmp/webcam/queue';
+		o.validate = function(section_id, value) {
+			if (value === '' || /^\/[A-Za-z0-9._\/-]+$/.test(value))
+				return true;
+			return _('Enter an absolute path with letters, numbers, dot, dash, underscore and slash.');
+		};
 
 		return m.render();
 	},
