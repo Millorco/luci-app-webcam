@@ -43,7 +43,7 @@ take_lock() {
 }
 if ! take_lock; then
 	logger -t "$WC_NAME capture" "Uno scatto è già in corso: questo viene saltato."
-	echo "Uno scatto è già in corso." >&2
+	[ -t 2 ] && echo "Uno scatto è già in corso." >&2
 	exit 3
 fi
 trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
@@ -60,8 +60,10 @@ SUNSET=""
 # Nome della fascia oraria speciale attiva (impostato da capture_service)
 SPECIAL="${WC_SPECIAL:-}"
 
+# Sul terminale solo se lanciato a mano: sotto procd lo stderr finirebbe
+# nel syslog come "sh" a livello err, doppione della riga di logger.
 log() {
-	echo "$@" >&2
+	[ -t 2 ] && echo "$@" >&2
 	logger -t "$WC_NAME capture" "$@"
 }
 
