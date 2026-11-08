@@ -56,7 +56,7 @@
 #include <avr/wdt.h>
 #include "Adafruit_SHT31.h"
 
-#define FW_VERSION "2.1"
+#define FW_VERSION "2.2"
 
 // --- Pin --------------------------------------------------------------------
 const uint8_t PIN_CAMERA  = 2;
@@ -434,13 +434,19 @@ void setup() {
 
 void loop() {
 	wdt_reset();
-	unsigned long now = millis();
 
 	// Comandi dal router e dalla porta FTDI, un carattere alla volta
 	while (routerSerial.available())
 		processCommand((char)routerSerial.read(), routerSerial, true);
 	while (Serial.available())
 		processCommand((char)Serial.read(), Serial, false);
+
+	// 'now' va letto DOPO i comandi: 'b', 'H' e 'F' salvano millis() nei
+	// rispettivi timestamp, e un 'now' letto prima sarebbe più vecchio di
+	// qualche ms. La sottrazione unsigned (now - lastHeartbeat) andrebbe
+	// allora sotto zero e diventerebbe ~4 miliardi: il watchdog scatterebbe
+	// proprio nell'istante in cui arriva l'heartbeat.
+	unsigned long now = millis();
 
 	// Fine della sospensione del watchdog
 	if (!hbWatchdogEnabled && now - hbSuspendStart >= WATCHDOG_SUSPEND) {

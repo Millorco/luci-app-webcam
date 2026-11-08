@@ -131,9 +131,9 @@ Archivio e file aggiuntivi (tutti disattivati di default):
   "settings": { "iso": "100", "aperture": null, "shutterspeed": null },
   "day_start": 1794028774,
   "day_end": 1794068884,
-  "app_version": "1.0-beta",
+  "app_version": "1.0-beta2",
   "climate": { "time": 1794058200, "sensor_ok": true, "temperature": 12.3, "humidity": 80,
-               "dewpoint": 9.0, "heating_enabled": true, "heater": false, "board_fw": "2.1" }
+               "dewpoint": 9.0, "heating_enabled": true, "heater": false, "board_fw": "2.2" }
 }
 ```
 
@@ -171,8 +171,8 @@ Firmware: [`board.ino`](board.ino) (versione 2.1).
 | `u` | umidità | es. `55.0`, oppure `ERR` |
 | `d` | test connessione | `OK` |
 | `r` | ciclo di alimentazione di router e fotocamera (5 s) | — |
-| `s` | stato su una riga | `S fw=2.1 camera=1 heating=0 pc=1 fan=0 sht=1 T=… H=… hb_age=… wd=1 cycles=…` |
-| `v` | versione | `Webcam Board fw 2.1` |
+| `s` | stato su una riga | `S fw=2.2 camera=1 heating=0 pc=1 fan=0 sht=1 T=… H=… hb_age=… wd=1 cycles=…` |
+| `v` | versione | `Webcam Board fw 2.2` |
 | `?` | elenco comandi | — |
 | `i` | *(solo FTDI)* scansione del bus I2C | — |
 | `w` / `W` | *(solo FTDI)* sospende per 60 minuti / riattiva il watchdog dell'heartbeat | — |
