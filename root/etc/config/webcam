@@ -14,6 +14,7 @@ config general 'general'
         option serial_port '/dev/ttyS1'
         option baud_rates '9600'
         option ping_url ''
+        option ntp_wait '30'
 
 config shooting 'shooting'
         option photo_name 'raw'
@@ -41,6 +42,8 @@ config server 'server'
         option upload_latest '0'
         option upload_latest_name 'current'
         option upload_data '0'
+        option queue_size '20'
+        option queue_dir ''
 
 # Fasce orarie con un intervallo di scatto diverso (es. Capodanno).
 # date: vuoto = ogni giorno, MM-GG = ogni anno, AAAA-MM-GG = una volta;

@@ -81,6 +81,8 @@ return view.extend({
 				rows.push(row(_('Last photo'), fmtTime(cap.time) + ' - ' + (cap.file || '')));
 				rows.push(row(_('Mode'), (cap.mode === 'night' ? _('Night') : _('Day')) + (cap.special ? ' (' + cap.special + ')' : '')));
 				rows.push(row(_('Result'), resultText(cap)));
+				if (cap.queued > 0)
+					rows.push(row(_('Waiting for upload'), _('%d photos in the offline queue').format(cap.queued)));
 			} else {
 				rows.push(row(_('Last photo'), _('No photo taken yet')));
 			}

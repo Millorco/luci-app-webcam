@@ -1,0 +1,26 @@
+# ---------------------------------------------------
+# Segna che l'ora del router è stata sincronizzata con NTP.
+#
+# Il GL-MT300N-V2 non ha un orologio a batteria: dopo un riavvio l'ora
+# riparte da quella dell'ultimo file salvato in flash, quindi è vecchia
+# finché sysntpd non la corregge. capture_service non scatta finché
+# questo file non esiste (vedi wait_for_clock).
+#
+# sysntpd (busybox ntpd) chiama hotplug.d/ntp con ACTION=step quando
+# corregge l'ora, ACTION=stratum quando cambia lo stratum e
+# ACTION=periodic ogni 11 minuti circa; stratum=16 vuol dire "non
+# sincronizzato". Il file è in /var/run (RAM), quindi sparisce a ogni
+# riavvio.
+# ---------------------------------------------------
+
+case "$ACTION" in
+	step)
+		touch /var/run/webcam_ntp_synced
+		;;
+	stratum|periodic)
+		case "$stratum" in
+			''|*[!0-9]*) ;;
+			*) [ "$stratum" -lt 16 ] && touch /var/run/webcam_ntp_synced ;;
+		esac
+		;;
+esac

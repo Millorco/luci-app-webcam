@@ -55,6 +55,7 @@ NOW_DATE="$(date -d "@$NOW" +"%Y%m%d-%H%M")"
 FILENAME="${WC_PHOTO_NAME}_${NOW_DATE}.jpg"
 DATAFILE="${FILENAME%.jpg}.json"
 MODE=""
+QUEUED=""
 SUNRISE=""
 SUNSET=""
 # Nome della fascia oraria speciale attiva (impostato da capture_service)
@@ -89,6 +90,7 @@ write_status() {
   "special": $(json_str "$SPECIAL"),
   "file": $(json_str "$FILENAME"),
   "upload": $( [ "$NO_UPLOAD" = 1 ] && echo false || echo true ),
+  "queued": $(json_num "$QUEUED"),
   "result": $(json_str "$1")
 }
 JSON
@@ -294,14 +296,20 @@ JSON
 #   <cartella>/current.jpg, current.json                  ultima foto (opzione)
 # ---------------------------------------------------
 
-# Carica il file locale $1 nel percorso remoto $2 (relativo alla cartella)
+# Carica il file locale $1 nel percorso remoto $2 (relativo alla cartella).
+# Con $3 = atomic il file viaggia con un nome temporaneo e viene rinominato
+# solo a upload completato: chi apre current.jpg durante l'upload vede
+# ancora la foto precedente, mai un'immagine troncata.
 put_file() {
-	local url port base
+	local local_file="$1" remote="$2" mode="$3" url port base tmp
 
 	port=""
 	[ -n "$WC_UPLOAD_PORT" ] && port=":$WC_UPLOAD_PORT"
 
-	set -- "$1" "$2" -s -S --connect-timeout 30 --retry 2 -T "$1" \
+	tmp="$remote"
+	[ "$mode" = atomic ] && tmp="$remote.part"
+
+	set -- -s -S --connect-timeout 30 --retry 2 -T "$local_file" \
 		--user "$WC_UPLOAD_USERNAME:$WC_UPLOAD_PASSWORD" --ftp-create-dirs
 
 	case "$WC_UPLOAD_PROTOCOL" in
@@ -322,13 +330,167 @@ put_file() {
 			;;
 	esac
 
-	url="$base$REMOTE_DIR$2"
-	shift 2
+	# Comandi eseguiti dopo il trasferimento ("-"). Il vecchio file viene
+	# cancellato prima ("*" = va bene anche se non esiste) perché molti
+	# server SFTP, OpenSSH compreso, rifiutano di rinominare sopra un file
+	# esistente. In FTP curl entra nella cartella del file, quindi bastano
+	# i nomi; in SFTP i percorsi sono relativi alla home, come "~/" sopra.
+	if [ "$mode" = atomic ]; then
+		if [ "$WC_UPLOAD_PROTOCOL" = sftp ]; then
+			set -- "$@" -Q "-*rm \"$REMOTE_DIR$remote\"" \
+				-Q "-rename \"$REMOTE_DIR$tmp\" \"$REMOTE_DIR$remote\""
+		else
+			set -- "$@" -Q "-*DELE ${remote##*/}" \
+				-Q "-RNFR ${tmp##*/}" -Q "-RNTO ${remote##*/}"
+		fi
+	fi
+
+	url="$base$REMOTE_DIR$tmp"
 	curl "$@" "$url"
 }
 
+# ---------------------------------------------------
+# Coda offline. Ogni foto da caricare viene messa in coda prima
+# dell'upload e tolta solo quando è arrivata sul server; se l'upload
+# fallisce (4G assente, server giù) resta lì e viene ritentata ai giri
+# successivi, dopo la foto nuova. La coda rispecchia le cartelle remote
+# (es. queue/2026/11/08/foto.jpg), così ogni foto finisce nella cartella
+# del giorno in cui è stata scattata.
+# In /tmp (RAM) la coda usa un collegamento fisico alla foto appena
+# scattata, quindi non occupa spazio in più finché quella resta sul router.
+# ---------------------------------------------------
+QUEUE_DIR=/tmp/webcam/queue
+QUEUE_RESERVE_KB=8192   # spazio da lasciare comunque libero nel filesystem
+
+setup_queue() {
+	case "$WC_QUEUE_SIZE" in
+		''|*[!0-9]*) WC_QUEUE_SIZE=20 ;;
+	esac
+	if [ -n "$WC_QUEUE_DIR" ]; then
+		# Su chiavetta USB: la cartella deve esistere già, altrimenti con la
+		# chiavetta non montata la coda finirebbe nella flash del router.
+		if [ -d "$WC_QUEUE_DIR" ]; then
+			QUEUE_DIR="${WC_QUEUE_DIR%/}"
+		else
+			log "ATTENZIONE: cartella della coda $WC_QUEUE_DIR non trovata (chiavetta non montata?), uso $QUEUE_DIR."
+		fi
+	fi
+	[ "$WC_QUEUE_SIZE" -gt 0 ] && mkdir -p "$QUEUE_DIR"
+}
+
+queue_enabled() {
+	[ "$WC_QUEUE_SIZE" -gt 0 ] && [ -d "$QUEUE_DIR" ]
+}
+
+# Foto in coda, dalla più vecchia: si ordina per la parte finale del nome,
+# AAAAMMGG-HHMM.jpg, che non dipende dal prefisso scelto in LuCI
+queue_list() {
+	queue_enabled || return 0
+	find "$QUEUE_DIR" -type f -name '*.jpg' 2>/dev/null | \
+		awk '{ n = $0; sub(/.*\//, "", n); print substr(n, length(n) - 16) "\t" $0 }' | \
+		sort | cut -f 2-
+}
+
+queue_count() {
+	queue_list | grep -c .
+}
+
+# Aggiunge alla coda la foto $1 (e il .json accanto) con percorso remoto $2
+queue_add() {
+	local src="$1" rel="$2" dst
+
+	queue_enabled || return 0
+	dst="$QUEUE_DIR/$rel"
+	mkdir -p "${dst%/*}"
+	ln -f "$src" "$dst" 2>/dev/null || cp "$src" "$dst" || return 1
+	if [ -f "${src%.jpg}.json" ]; then
+		ln -f "${src%.jpg}.json" "${dst%.jpg}.json" 2>/dev/null || \
+			cp "${src%.jpg}.json" "${dst%.jpg}.json"
+	fi
+	return 0
+}
+
+# Toglie dalla coda il file $1 (percorso locale nella coda) e il suo .json,
+# poi le cartelle rimaste vuote
+queue_remove() {
+	local f="$1" d
+
+	rm -f "$f" "${f%.jpg}.json"
+	d="${f%/*}"
+	while [ "$d" != "$QUEUE_DIR" ] && [ "${d#"$QUEUE_DIR"/}" != "$d" ]; do
+		rmdir "$d" 2>/dev/null || break
+		d="${d%/*}"
+	done
+}
+
+queue_free_kb() {
+	df -Pk "$QUEUE_DIR" 2>/dev/null | awk 'NR == 2 { print $4 }'
+}
+
+# Rispetta il limite in MB e lascia libero lo spazio di riserva,
+# cancellando le foto più vecchie. La foto più recente resta sempre.
+queue_prune() {
+	local used free oldest dropped=0
+
+	queue_enabled || return 0
+	while [ "$(queue_count)" -gt 1 ]; do
+		used=$(du -sk "$QUEUE_DIR" 2>/dev/null | awk '{ print $1 }')
+		free=$(queue_free_kb)
+		[ "${used:-0}" -le $(( WC_QUEUE_SIZE * 1024 )) ] && \
+			[ "${free:-0}" -ge "$QUEUE_RESERVE_KB" ] && break
+		oldest=$(queue_list | head -n 1)
+		queue_remove "$oldest"
+		dropped=$(( dropped + 1 ))
+	done
+	[ "$dropped" -gt 0 ] && \
+		log "ATTENZIONE: coda di upload piena, cancellate $dropped foto non caricate (le più vecchie)."
+	return 0
+}
+
+# Carica la foto locale $1 con il percorso remoto $2, più il suo .json
+upload_photo() {
+	local jpg="$1" rel="$2"
+
+	put_file "$jpg" "$rel" || return 1
+	if [ -f "${jpg%.jpg}.json" ]; then
+		put_file "${jpg%.jpg}.json" "${rel%.jpg}.json" || \
+			log "ATTENZIONE: upload del file di dati ${rel%.jpg}.json fallito"
+	fi
+	return 0
+}
+
+# Ritenta le foto rimaste in coda, dalla più vecchia. Si ferma al primo
+# errore (la rete è di nuovo giù) o quando il tempo a disposizione è finito,
+# così il prossimo scatto non slitta: metà intervallo, al massimo 5 minuti.
+queue_drain() {
+	local budget f rel sent=0
+
+	queue_enabled || return 0
+	budget=300
+	case "$WC_INTERVAL" in
+		''|*[!0-9]*) ;;
+		*) [ $(( WC_INTERVAL * 30 )) -lt "$budget" ] && budget=$(( WC_INTERVAL * 30 )) ;;
+	esac
+
+	queue_list > "$WORK_DIR/queue.lst"
+	while IFS= read -r f; do
+		[ $(( $(date +%s) - NOW )) -ge "$budget" ] && break
+		rel="${f#"$QUEUE_DIR"/}"
+		if upload_photo "$f" "$rel" </dev/null; then
+			queue_remove "$f"
+			sent=$(( sent + 1 ))
+		else
+			log "Upload della foto in coda $rel fallito: riprovo al prossimo giro."
+			break
+		fi
+	done < "$WORK_DIR/queue.lst"
+	rm -f "$WORK_DIR/queue.lst"
+	[ "$sent" -gt 0 ] && log "Caricate $sent foto rimaste in coda, ne restano $(queue_count)."
+	return 0
+}
+
 upload() {
-	local dir archive latest
+	local dir archive latest result=ok queued
 
 	[ -n "$WC_UPLOAD_SERVER" ] || fail "server di upload non configurato"
 
@@ -347,13 +509,21 @@ upload() {
 
 	[ "$WC_UPLOAD_DATA" = 1 ] && write_datafile
 
-	put_file "$FILENAME" "$archive$FILENAME" || \
-		fail "upload fallito verso $WC_UPLOAD_PROTOCOL://$WC_UPLOAD_SERVER/$dir$archive"
+	setup_queue
+	queue_add "$WORK_DIR/$FILENAME" "$archive$FILENAME" || \
+		log "ATTENZIONE: impossibile mettere in coda $FILENAME"
+	queue_prune
 
-	if [ "$WC_UPLOAD_DATA" = 1 ]; then
-		put_file "$DATAFILE" "$archive$DATAFILE" || \
-			log "ATTENZIONE: upload del file di dati $DATAFILE fallito"
+	# Prima la foto nuova, così l'archivio e current.jpg sono aggiornati
+	# subito anche quando ci sono foto arretrate da recuperare
+	if ! upload_photo "$WORK_DIR/$FILENAME" "$archive$FILENAME"; then
+		QUEUED=$(queue_count)
+		if queue_enabled; then
+			fail "upload fallito verso $WC_UPLOAD_PROTOCOL://$WC_UPLOAD_SERVER/$dir$archive, foto in coda: $QUEUED"
+		fi
+		fail "upload fallito verso $WC_UPLOAD_PROTOCOL://$WC_UPLOAD_SERVER/$dir$archive"
 	fi
+	queue_enabled && queue_remove "$QUEUE_DIR/$archive$FILENAME"
 
 	log "Upload completato: $archive$FILENAME ($MODE${SPECIAL:+, $SPECIAL}, $WC_UPLOAD_PROTOCOL)"
 
@@ -364,20 +534,29 @@ upload() {
 			''|*[!A-Za-z0-9._-]*) latest=current ;;
 		esac
 		latest="${latest%.jpg}"
-		if put_file "$FILENAME" "$latest.jpg"; then
-			[ "$WC_UPLOAD_DATA" = 1 ] && { put_file "$DATAFILE" "$latest.json" || \
-				log "ATTENZIONE: upload di $latest.json fallito"; }
+		if put_file "$WORK_DIR/$FILENAME" "$latest.jpg" atomic; then
+			if [ "$WC_UPLOAD_DATA" = 1 ]; then
+				put_file "$WORK_DIR/$DATAFILE" "$latest.json" atomic || \
+					log "ATTENZIONE: upload di $latest.json fallito"
+			fi
 		else
 			log "ATTENZIONE: upload della copia $latest.jpg fallito"
-			write_status "ok, ma copia $latest.jpg non caricata"
-			return
+			result="ok, ma copia $latest.jpg non caricata"
 		fi
 	fi
 
-	write_status ok
+	queue_drain
+	QUEUED=$(queue_count)
+	write_status "$result"
 }
 
 write_status running
+# Senza orologio a batteria, dopo un riavvio l'ora può essere quella di
+# mesi fa: capture_service aspetta NTP, qui si scarta solo il caso
+# evidente (anche per gli scatti avviati a mano da LuCI).
+if [ "$NO_UPLOAD" = 0 ] && [ "$(date -d "@$NOW" +%Y)" -lt 2025 ]; then
+	fail "ora del router non valida ($(date -d "@$NOW")): attendo la sincronizzazione NTP"
+fi
 day_or_night
 capture
 if [ "$NO_UPLOAD" = 1 ]; then
