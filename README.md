@@ -23,6 +23,7 @@ App LuCI per OpenWrt che trasforma un piccolo router (testata su **GL.iNet GL-MT
 - [Monitoraggio e log centralizzati](#monitoraggio-e-log-centralizzati)
 - [Risoluzione dei problemi](#risoluzione-dei-problemi)
 - [Struttura del progetto](#struttura-del-progetto)
+- [Feed opkg](#feed-opkg)
 
 ## Hardware
 
@@ -42,6 +43,34 @@ Collegamenti principali:
 | **FTDI** (debug e programmazione) | 1 GND · 2 TX · 3 RX · 4 5V · 5 DTR | TX → RXD dell'adattatore, RX → TXD dell'adattatore. |
 
 ## Installazione
+
+### Con opkg (consigliato)
+
+Il pacchetto è pubblicato in un feed opkg firmato. Sul router, via SSH, una volta sola:
+
+```sh
+wget -O /tmp/webcam.pub https://raw.githubusercontent.com/Millorco/luci-app-webcam/feed/key.pub
+opkg-key add /tmp/webcam.pub
+echo "src/gz webcam https://raw.githubusercontent.com/Millorco/luci-app-webcam/feed" >> /etc/opkg/customfeeds.conf
+opkg update
+opkg install luci-app-webcam
+```
+
+opkg installa da solo le dipendenze (`gphoto2`, `libgphoto2-drivers-ptp2`, `curl`, `coreutils-stty`), abilita e avvia il servizio `webcam_capture`. Si può fare anche da LuCI: **Sistema → Software → Aggiorna elenchi**, poi cerca `luci-app-webcam`.
+
+Aggiornare a una nuova versione:
+
+```sh
+opkg update && opkg upgrade luci-app-webcam
+```
+
+La configurazione `/etc/config/webcam` e gli elenchi di ISO, diaframmi e tempi non vengono mai sovrascritti: il pacchetto li crea solo se mancano. Si può passare a opkg anche su un router installato prima con `install.sh`: basta eseguire i comandi qui sopra.
+
+Il feed è per OpenWrt fino alla 24.10 (`opkg`). Dalla 25.x OpenWrt usa `apk` al posto di `opkg`: lì, per ora, usa `install.sh`.
+
+Il pacchetto si può anche installare senza aggiungere il feed, scaricando il `.ipk` allegato alla release: `opkg install ./luci-app-webcam_*.ipk`.
+
+### Con lo script
 
 Sul router, via SSH:
 
@@ -247,6 +276,7 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
 .
 ├── board.ino                                  firmware della scheda
 ├── install.sh                                 installazione da release GitHub
+├── scripts/                                   costruzione del pacchetto e del feed opkg
 ├── htdocs/luci-static/resources
 │   ├── view/webcam/                           pagine LuCI
 │   │   ├── status.js                          stato, ultimo scatto, "Scatta ora" e anteprima
@@ -278,6 +308,19 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
         ├── luci/menu.d/luci-app-webcam.json   menu
         └── rpcd/acl.d/luci-app-webcam.json    permessi
 ```
+
+## Feed opkg
+
+Il workflow [`.github/workflows/opkg-feed.yml`](.github/workflows/opkg-feed.yml) costruisce il pacchetto (`scripts/build-ipk.sh`), rigenera e firma l'indice (`scripts/make-index.sh`) e pubblica tutto nel branch `feed`. Parte da solo a ogni nuovo tag; per un tag già esistente si lancia da **Actions → opkg feed → Run workflow**. Il `.ipk` viene anche allegato alla release, se esiste. La versione del pacchetto è quella del tag, con `~` al posto di `-` (`1.0-beta3` → `1.0~beta3-1`), così opkg considera le beta più vecchie della versione finale.
+
+La chiave di firma si crea una volta sola, per esempio su un router:
+
+```sh
+usign -G -s webcam-feed.sec -p webcam-feed.pub -c "luci-app-webcam feed"
+cat webcam-feed.sec webcam-feed.pub
+```
+
+e va salvata nei segreti del repository (**Settings → Secrets and variables → Actions**): il contenuto di `webcam-feed.sec` in `USIGN_SECRET_KEY` e quello di `webcam-feed.pub` in `USIGN_PUBLIC_KEY`. Poi cancella `webcam-feed.sec` dal router. Se la chiave cambia, ogni router deve reinstallare la nuova con `opkg-key add`.
 
 ## Licenza
 

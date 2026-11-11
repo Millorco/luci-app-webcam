@@ -1,0 +1,164 @@
+# Costruisce il pacchetto opkg (.ipk) e pubblica il feed firmato nel branch
+# "feed", servito da
+#   https://raw.githubusercontent.com/Millorco/luci-app-webcam/feed
+#
+# - push di un tag (es. 1.0-beta4): pacchetto di quella versione, aggiunto al
+#   feed e allegato alla release se esiste gia';
+# - "Run workflow" a mano: stessa cosa per un tag gia' esistente;
+# - pull request: costruisce soltanto, senza pubblicare (artifact scaricabile).
+#
+# Segreti richiesti per pubblicare (Settings > Secrets and variables > Actions):
+#   USIGN_SECRET_KEY  contenuto del file .sec creato con "usign -G"
+#   USIGN_PUBLIC_KEY  contenuto del file .pub corrispondente
+name: opkg feed
+
+on:
+  push:
+    tags: ['*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag da pubblicare (es. 1.0-beta3)'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: opkg-feed
+  cancel-in-progress: false
+
+env:
+  USIGN_COMMIT: c4c72b1b07945ee192361dc751291a7c98d6adcd
+
+jobs:
+  feed:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout strumenti
+        uses: actions/checkout@v4
+        with:
+          path: tools
+
+      - name: Versione da costruire
+        id: v
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          case "$GITHUB_EVENT_NAME" in
+            push)              TAG="$GITHUB_REF_NAME"; PUBLISH=1 ;;
+            workflow_dispatch) TAG="$INPUT_TAG";       PUBLISH=1 ;;
+            *)                 TAG="$(cat tools/root/usr/share/webcam/version)"; PUBLISH=0 ;;
+          esac
+          if ! printf '%s' "$TAG" | grep -Eq '^[0-9][0-9A-Za-z.+-]*$'; then
+            echo "::error::Tag non valido per un pacchetto opkg: '$TAG'"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout sorgenti del tag
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ steps.v.outputs.tag }}
+          path: src
+
+      - name: Usa i sorgenti del commit corrente
+        if: github.event_name != 'workflow_dispatch'
+        run: ln -s tools src
+
+      - name: Compila usign
+        run: |
+          git clone --quiet https://github.com/openwrt/usign.git /tmp/usign
+          git -C /tmp/usign checkout --quiet "$USIGN_COMMIT"
+          cmake -S /tmp/usign -B /tmp/usign/build >/dev/null
+          cmake --build /tmp/usign/build >/dev/null
+          sudo install -m 755 /tmp/usign/build/usign /usr/local/bin/usign
+
+      - name: Costruisci il pacchetto
+        id: ipk
+        run: |
+          export SOURCE_DATE_EPOCH="$(git -C src log -1 --format=%ct)"
+          IPK="$(tools/scripts/build-ipk.sh "${{ steps.v.outputs.tag }}" src out)"
+          echo "path=$IPK" >> "$GITHUB_OUTPUT"
+          tools/scripts/make-index.sh out
+          cat out/Packages
+
+      - name: Prova la firma con una chiave usa e getta
+        if: steps.v.outputs.publish != '1'
+        run: |
+          usign -G -s /tmp/test.sec -p /tmp/test.pub -c "test"
+          tools/scripts/make-index.sh out /tmp/test.sec
+          usign -V -m out/Packages -p /tmp/test.pub
+          rm -f out/Packages.sig /tmp/test.sec /tmp/test.pub
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-webcam-ipk
+          path: out/
+
+      - name: Controlla i segreti
+        if: steps.v.outputs.publish == '1'
+        env:
+          SEC: ${{ secrets.USIGN_SECRET_KEY }}
+          PUB: ${{ secrets.USIGN_PUBLIC_KEY }}
+        run: |
+          if [ -z "$SEC" ] || [ -z "$PUB" ]; then
+            echo "::error::Mancano i segreti USIGN_SECRET_KEY / USIGN_PUBLIC_KEY: il feed non puo' essere firmato. Vedi README, sezione 'Feed opkg'."
+            exit 1
+          fi
+
+      - name: Aggiorna il branch feed
+        if: steps.v.outputs.publish == '1'
+        env:
+          SEC: ${{ secrets.USIGN_SECRET_KEY }}
+          PUB: ${{ secrets.USIGN_PUBLIC_KEY }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          URL="https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          if git ls-remote --exit-code --heads "$URL" feed >/dev/null; then
+            git clone --quiet --depth 1 --branch feed "$URL" feed
+          else
+            git init --quiet -b feed feed
+            git -C feed remote add origin "$URL"
+          fi
+
+          # Una sola build per versione: la nuova sostituisce l'eventuale vecchia.
+          cp "${{ steps.ipk.outputs.path }}" feed/
+
+          umask 077
+          printf '%s\n' "$SEC" > /tmp/feed.sec
+          printf '%s\n' "$PUB" > feed/key.pub
+          FP="$(usign -F -p feed/key.pub)"
+          [ "$FP" = "$(usign -F -s /tmp/feed.sec)" ] || { echo "::error::Chiave pubblica e segreta non corrispondono"; exit 1; }
+
+          tools/scripts/make-index.sh feed /tmp/feed.sec
+          usign -V -m feed/Packages -p feed/key.pub
+          rm -f /tmp/feed.sec
+
+          cp tools/scripts/feed-README.md feed/README.md
+
+          cd feed
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Feed gia' aggiornato"
+          else
+            git commit --quiet -m "Feed: luci-app-webcam ${{ steps.v.outputs.tag }}"
+            git push --quiet origin feed
+          fi
+
+      - name: Allega il pacchetto alla release
+        if: steps.v.outputs.publish == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.v.outputs.tag }}
+        run: |
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${{ steps.ipk.outputs.path }}" --clobber --repo "${{ github.repository }}"
+          else
+            echo "Nessuna release '$TAG' (ancora): il pacchetto e' comunque nel feed."
+          fi
