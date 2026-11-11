@@ -219,7 +219,7 @@ Poi registra con timestamp ogni comando ricevuto e ogni cambio dei relè, e ogni
 ## Monitoraggio e log centralizzati
 
 - **Avvisi**: crea un check su [healthchecks.io](https://healthchecks.io) per ogni webcam, con *Period* uguale all'intervallo di scatto e *Grace time* almeno doppio, e copia il ping URL in **System → Monitoring**. Il router fa un ping dopo ogni foto caricata e un ping `/fail` con il messaggio a ogni errore. Scrive nel registro del check anche gli avvii del servizio (con l'uptime, per vedere i riavvii) e la modalità manutenzione. Se il router si spegne, l'allarme arriva alla fine del grace time.
-- **Log**: OpenWrt può mandare il suo log a un server syslog (**System → System → Logging**). Il server con VictoriaLogs (Docker), con o senza VPN, è nel repository [webcam-logserver](https://github.com/Millorco/webcam-logserver). Per la variante WireGuard, sul router c'è `central_log setup peer_<nome>.conf`.
+- **Log**: OpenWrt può mandare il suo log a un server syslog (**System → System → Logging**). Il server con VictoriaLogs (Docker), con o senza VPN, è nel repository [webcam-logserver](https://github.com/Millorco/webcam-logserver). Lo stesso repository ha una VPN WireGuard a stella: i router si collegano al VPS, tu ti colleghi dal PC e apri LuCI e SSH di ogni router (`http://webcam1.vpn`), anche in 4G. Sul router basta `central_log setup peer_<nome>.conf`, che crea il tunnel, apre dal tunnel solo SSH, LuCI e ping e manda lì il log.
 
 ## Risoluzione dei problemi
 
@@ -261,7 +261,7 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
     ├── usr/bin/
     │   ├── capture, capture_service           scatto e ciclo di scatto
     │   ├── capture_now                        scatto manuale dalla pagina Status
-    │   ├── central_log                        tunnel WireGuard e log remoto
+    │   ├── central_log                        VPN WireGuard: log remoto, LuCI/SSH
     │   ├── climate                            anti-appannamento
     │   ├── heartbeat, serialsend, read_temp   comandi verso la scheda
     │   ├── iso_export, aperture_export,
