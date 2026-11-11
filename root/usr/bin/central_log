@@ -5,8 +5,8 @@
 #
 # Uso:
 #   central_log setup <peer.conf> [ip_syslog]
-#       importa il file del peer generato sul VPS (wireguard/peer_<nome>/
-#       peer_<nome>.conf), crea l'interfaccia wglog, apre dal tunnel SSH,
+#       importa il file .conf del peer scaricato da wg-easy, crea
+#       l'interfaccia wglog, apre dal tunnel SSH,
 #       LuCI e ping, e manda il log del router a ip_syslog:514 via TCP
 #       (predefinito: .1 della rete del tunnel, es. 10.13.13.1)
 #   central_log off      toglie tunnel, accesso e syslog remoto
@@ -159,7 +159,10 @@ setup() {
 	[ -n "$psk" ] && uci set network.@wireguard_$IFACE[-1].preshared_key="$psk"
 	uci set network.@wireguard_$IFACE[-1].endpoint_host="$host"
 	uci set network.@wireguard_$IFACE[-1].endpoint_port="$port"
-	uci set network.@wireguard_$IFACE[-1].persistent_keepalive="${keep:-25}"
+	# Keepalive sempre attivo (wg-easy di serie mette 0): senza, dietro NAT
+	# o in 4G il router smette di essere raggiungibile dal PC
+	case "$keep" in ''|0|*[!0-9]*) keep=25 ;; esac
+	uci set network.@wireguard_$IFACE[-1].persistent_keepalive="$keep"
 	uci set network.@wireguard_$IFACE[-1].route_allowed_ips=1
 	# Nel tunnel solo la rete del tunnel, mai tutto il traffico
 	echo "$allowed" | tr ',' '\n' | while read -r a; do
