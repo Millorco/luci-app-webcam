@@ -38,6 +38,51 @@ function resultText(cap) {
 	return cap.result;
 }
 
+// Confronta due versioni tipo "1.0", "1.0-beta3", "2.2".
+// Restituisce >0 se a è più recente di b, <0 se più vecchia, 0 se uguali.
+// Una versione senza suffisso (1.0) è più recente delle sue beta.
+function parseVersion(v) {
+	var m = String(v).trim().replace(/^v/i, '').split('-');
+	var pre = m.slice(1).join('-').toLowerCase();
+	var p = pre.match(/^([a-z]*)\.?(\d*)/) || [ '', pre, '' ];
+	return {
+		main: m[0].split('.').map(function(n) { return parseInt(n, 10) || 0; }),
+		pre: pre,
+		preLabel: p[1],
+		preNum: p[2] !== '' ? parseInt(p[2], 10) : 1
+	};
+}
+
+function compareVersions(a, b) {
+	var x = parseVersion(a), y = parseVersion(b), i, d;
+
+	for (i = 0; i < Math.max(x.main.length, y.main.length); i++) {
+		d = (x.main[i] || 0) - (y.main[i] || 0);
+		if (d)
+			return d;
+	}
+	if (x.pre === y.pre)
+		return 0;
+	if (!x.pre || !y.pre)
+		return x.pre ? -1 : 1;
+	if (x.preLabel !== y.preLabel)
+		return x.preLabel < y.preLabel ? -1 : 1;
+	return x.preNum - y.preNum;
+}
+
+// Versione installata, più l'avviso se ne esiste una più recente
+function versionCell(installed, latest, url) {
+	if (!installed || !latest || compareVersions(latest, installed) <= 0)
+		return installed;
+
+	var text = _('version %s available').format(latest);
+	return E('span', {}, [
+		installed, ' - ',
+		E('strong', { 'style': 'color:#c60' },
+			url ? E('a', { 'href': url, 'target': '_blank', 'rel': 'noopener' }, text) : text)
+	]);
+}
+
 function row(label, value) {
 	return E('tr', { 'class': 'tr' }, [
 		E('td', { 'class': 'td left', 'width': '33%' }, label),
@@ -51,19 +96,25 @@ return view.extend({
 	},
 
 	update: function(container) {
+		var self = this;
 		var scale = uci.get('webcam', 'general', 'temp_scale') || 'c';
 
 		return Promise.all([
 			readJSON('/tmp/webcam/status.json'),
 			readJSON('/tmp/webcam/capture.json'),
-			L.resolveDefault(fs.read('/usr/share/webcam/version'), null)
+			L.resolveDefault(fs.read('/usr/share/webcam/version'), null),
+			readJSON('/tmp/webcam/updates.json')
 		]).then(function(res) {
-			var st = res[0], cap = res[1], rows = [];
+			var st = res[0], cap = res[1], upd = res[3] || {}, rows = [];
 			var appVersion = res[2] ? res[2].trim() : null;
 
-			rows.push(row(_('App version'), appVersion || _('unknown')));
-			rows.push(row(_('Board firmware'),
-				(st && st.board_fw) ? st.board_fw : _('no answer from the board')));
+			rows.push(row(_('App version'), appVersion
+				? versionCell(appVersion, upd.app_latest, upd.app_url)
+				: _('unknown')));
+			rows.push(row(_('Board firmware'), (st && st.board_fw)
+				? versionCell(st.board_fw, upd.fw_latest, upd.fw_url)
+				: _('no answer from the board')));
+			rows.push(row(_('Update check'), self.updateCheckCell(upd)));
 
 			if (st) {
 				rows.push(row(_('Sensor'), st.sensor_ok ? _('OK') : _('Read error')));
@@ -89,6 +140,71 @@ return view.extend({
 
 			container.innerHTML = '';
 			container.appendChild(E('table', { 'class': 'table' }, rows));
+		});
+	},
+
+	updateCheckCell: function(upd) {
+		var text;
+
+		if (this.updateState === 'disabled')
+			text = _('Disabled');
+		else if (this.updateState === 'checking')
+			text = _('Checking…');
+		else if (!upd.attempt)
+			text = _('Not checked yet');
+		else if (upd.error)
+			text = upd.checked
+				? _('Last check failed (no internet?), result of %s').format(fmtTime(upd.checked))
+				: _('Failed: no internet or update server not reachable');
+		else
+			text = _('Last checked %s').format(fmtTime(upd.checked));
+
+		return E('span', {}, [
+			text, ' ',
+			E('button', {
+				'class': 'cbi-button',
+				'style': 'margin-left:.5em',
+				'disabled': (this.updateState === 'checking' || this.updateState === 'disabled') ? '' : null,
+				'click': ui.createHandlerFn(this, 'checkUpdates', true)
+			}, _('Check now'))
+		]);
+	},
+
+	// Avvia check_updates (che non fa nulla se il risultato ha meno di
+	// 12 ore, a meno di force) e aspetta il nuovo updates.json.
+	// Senza rete il download si ferma da solo dopo pochi secondi.
+	checkUpdates: function(force) {
+		var self = this, prevAttempt = null;
+		var done = function(state) {
+			self.updateState = state;
+			return self.update(self.container);
+		};
+
+		// L'esito nuovo si riconosce dal cambio di "attempt"
+		return readJSON('/tmp/webcam/updates.json').then(function(prev) {
+			prevAttempt = prev ? prev.attempt : null;
+			return L.resolveDefault(fs.exec('/usr/bin/check_updates', force ? [ '--force' ] : []), null);
+		}).then(function(res) {
+			var out = res ? (res.stdout || '').trim() : '', tries = 0;
+
+			if (out === 'disabled')
+				return done('disabled');
+			if (out !== 'started' && out !== 'busy')
+				return done(null);
+
+			self.updateState = 'checking';
+			self.update(self.container);
+
+			var wait = function() {
+				return new Promise(function(resolve) { window.setTimeout(resolve, 2000); }).then(function() {
+					return readJSON('/tmp/webcam/updates.json');
+				}).then(function(upd) {
+					if ((upd && upd.attempt !== prevAttempt) || ++tries >= 15)
+						return done(null);
+					return wait();
+				});
+			};
+			return wait();
 		});
 	},
 
@@ -188,6 +304,7 @@ return view.extend({
 		var self = this;
 
 		this.preview = E('div', { 'style': 'margin-top:1em' });
+		this.container = container;
 
 		var btnShoot = E('button', {
 			'class': 'cbi-button cbi-button-action',
@@ -212,6 +329,7 @@ return view.extend({
 
 		poll.add(function() { return self.update(container); }, 30);
 		this.update(container);
+		this.checkUpdates(false);
 
 		return E('div', { 'class': 'cbi-map' }, [
 			E('h2', {}, _('Webcam Status')),

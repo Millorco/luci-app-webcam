@@ -12,6 +12,9 @@
         "/usr/share/webcam/version": [
           "read"
         ],
+        "/tmp/webcam/updates.json": [
+          "read"
+        ],
         "/tmp/webcam/photo/*": [
           "read"
         ]
@@ -29,6 +32,12 @@
           "exec"
         ],
         "/usr/bin/capture_now *": [
+          "exec"
+        ],
+        "/usr/bin/check_updates": [
+          "exec"
+        ],
+        "/usr/bin/check_updates *": [
           "exec"
         ]
       }

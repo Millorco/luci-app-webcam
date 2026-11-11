@@ -73,6 +73,10 @@ Le pagine sono in **Servizi → Webcam**. La configurazione è salvata in `/etc/
 
 Mostra la versione dell'app e del firmware della scheda (letta con il comando `v`), temperatura, umidità, punto di rugiada, stato del riscaldamento, ultimo scatto (giorno/notte) ed esito dell'upload. Si aggiorna ogni 30 secondi; i dati della scheda ogni 5 minuti.
 
+Accanto alle versioni dell'app e del firmware compare *version X available* se ne esiste una più recente, con il link alla release o al firmware. La riga **Update check** dice quando è stato fatto l'ultimo controllo e ha il pulsante **Check now**. Il controllo (`check_updates`) scarica [`latest.json`](latest.json) solo con la pagina Status aperta, al massimo ogni 12 ore (ogni ora dopo un errore), in background e con un timeout di 20 secondi. Senza internet la pagina resta com'è e mostra l'ultimo risultato riuscito. Il firmware della scheda va comunque aggiornato a mano dall'FTDI.
+
+A ogni nuova release aggiorna `app` e `app_url` in `latest.json` (e `fw`, `fw_url` quando cambia `FW_VERSION` in `board.ino`), e la sua copia se usi un *Update info URL*.
+
 Sotto la tabella ci sono tre pulsanti:
 
 - **Take photo now**: scatta subito con le impostazioni attuali e carica la foto come uno scatto normale.
@@ -91,6 +95,7 @@ Funzionano anche in modalità manutenzione. Dopo lo scatto la pagina mostra l'an
 - **Temperature scale**: °C o °F nella pagina Status.
 - **Anti-fog Heating**: abilita il controllo automatico e ne imposta le soglie (margine dal punto di rugiada, temperatura minima, isteresi, ventola insieme al riscaldamento).
 - **Monitoring**: URL di ping di [healthchecks.io](https://healthchecks.io), vedi [Monitoraggio e log centralizzati](#monitoraggio-e-log-centralizzati).
+- **Check for updates** / **Update info URL**: attiva il controllo degli aggiornamenti della pagina Status e indica da dove leggere le ultime versioni. Vuoto = `latest.json` su GitHub. Con il repository privato il router non può leggerlo, quindi metti una copia del file su un server raggiungibile (per esempio il proprio sito) e scrivi qui il suo indirizzo.
 - **Serial Port**: `/dev/ttyS1` a 9600 baud per la scheda.
 
 ### Camera
@@ -132,7 +137,7 @@ Archivio e file aggiuntivi (tutti disattivati di default):
   "settings": { "iso": "100", "aperture": null, "shutterspeed": null },
   "day_start": 1794028774,
   "day_end": 1794068884,
-  "app_version": "1.0-beta3",
+  "app_version": "1.0-beta4",
   "climate": { "time": 1794058200, "sensor_ok": true, "temperature": 12.3, "humidity": 80,
                "dewpoint": 9.0, "heating_enabled": true, "heater": false, "board_fw": "2.2" }
 }
@@ -169,7 +174,7 @@ Il GL-MT300N-V2 non ha un orologio a batteria: dopo ogni riavvio, compresi i cic
 
 ## Scheda relè e sensore
 
-Firmware: [`board.ino`](board.ino) (versione 2.1).
+Firmware: [`board.ino`](board.ino) (versione 2.2).
 
 ### Protocollo
 
@@ -247,6 +252,7 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
 .
 ├── board.ino                                  firmware della scheda
 ├── install.sh                                 installazione da release GitHub
+├── latest.json                                ultime versioni di app e firmware (pagina Status)
 ├── htdocs/luci-static/resources
 │   ├── view/webcam/                           pagine LuCI
 │   │   ├── status.js                          stato, ultimo scatto, "Scatta ora" e anteprima
@@ -261,6 +267,7 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
     ├── usr/bin/
     │   ├── capture, capture_service           scatto e ciclo di scatto
     │   ├── capture_now                        scatto manuale dalla pagina Status
+    │   ├── check_updates                      cerca nuove versioni di app e firmware
     │   ├── central_log                        tunnel WireGuard e log remoto
     │   ├── climate                            anti-appannamento
     │   ├── heartbeat, serialsend, read_temp   comandi verso la scheda
