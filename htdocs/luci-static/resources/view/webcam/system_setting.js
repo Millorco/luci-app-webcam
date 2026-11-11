@@ -74,6 +74,24 @@ return view.extend({
 			return _('Enter a URL starting with http:// or https://');
 		};
 
+		s = m.section(form.TypedSection, 'general', _('Updates'),
+			_('The Status page shows when a newer app version or board firmware is available. The check downloads a small file at most every 12 hours, only while the Status page is open, and gives up after a few seconds if there is no internet.'));
+		s.anonymous = true;
+
+		o = s.option(form.Flag, 'update_check', _('Check for updates'));
+		o.default = o.enabled;
+		o.rmempty = false;
+
+		o = s.option(form.Value, 'update_url', _('Update info URL'),
+			_('JSON file with the latest versions (<code>app</code>, <code>app_url</code>, <code>fw</code>, <code>fw_url</code>). Leave empty to use latest.json from the GitHub repository.'));
+		o.placeholder = 'https://raw.githubusercontent.com/Millorco/luci-app-webcam/main/latest.json';
+		o.depends('update_check', '1');
+		o.validate = function(section_id, value) {
+			if (value === '' || /^https?:\/\/[^\s"'`$\\]+$/.test(value))
+				return true;
+			return _('Enter a URL starting with http:// or https://');
+		};
+
 		s = m.section(form.TypedSection, 'general', _('Serial Port Setting'));
 		s.anonymous = true;
 
