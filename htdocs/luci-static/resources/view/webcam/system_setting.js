@@ -74,6 +74,24 @@ return view.extend({
 			return _('Enter a URL starting with http:// or https://');
 		};
 
+		o = s.option(form.Value, 'inventory_url', _('Inventory URL'),
+			_('Address of <code>report.php</code> of the webcam inventory (webcam-logserver/inventario). Every 6 hours and at boot the router sends its technical data (model, versions, camera, VPN address, free space, last photo). Leave empty to disable.'));
+		o.placeholder = 'https://www.example.com/inventario/report.php';
+		o.validate = function(section_id, value) {
+			if (value === '' || /^https?:\/\/[^\s"'`$\\]+$/.test(value))
+				return true;
+			return _('Enter a URL starting with http:// or https://');
+		};
+
+		o = s.option(form.Value, 'inventory_token', _('Inventory token'),
+			_('The <code>report_token</code> set in config.php of the inventory.'));
+		o.password = true;
+		o.validate = function(section_id, value) {
+			if (value === '' || /^[A-Za-z0-9._~+\/=-]+$/.test(value))
+				return true;
+			return _('Letters, digits and . _ ~ + / = - only');
+		};
+
 		s = m.section(form.TypedSection, 'general', _('Updates'),
 			_('The Status page shows when a newer app version or board firmware is available. The check downloads a small file at most every 12 hours, only while the Status page is open, and gives up after a few seconds if there is no internet.'));
 		s.anonymous = true;
