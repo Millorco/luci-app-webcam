@@ -1,7 +1,7 @@
 #!/bin/sh
 # ---------------------------------------------------
 # Invia i dati tecnici del router all'inventario delle webcam
-# (report.php di webcam-inventario): modello, versioni,
+# (modulo Webcam di Dolibarr o report.php di webcam-inventario): modello, versioni,
 # fotocamera, IP nella VPN, spazio libero, ultimo scatto...
 #
 # Uso: inventory_report [--cron|--boot|--print]
