@@ -88,8 +88,17 @@ queue_count() {
 
 STATUS="$WC_STATE_DIR/status.json"
 CAPTURE="$WC_STATE_DIR/capture.json"
-VPN_IP="$(uci -q get network.wglog.addresses | awk '{ print $1 }')"
-VPN_IP="${VPN_IP%%/*}"
+# IP nella VPN: l'interfaccia wglog creata da central_log, altrimenti la
+# prima interfaccia WireGuard configurata a mano (qualunque nome abbia)
+vpn_ip() {
+	local i a
+	for i in wglog $(uci -q show network | sed -n "s/^network\.\([^.]*\)\.proto='wireguard'$/\1/p"); do
+		a="$(uci -q get "network.$i.addresses" | awk '{ print $1 }')"
+		[ -n "$a" ] || a="$(ip -4 -o addr show dev "$i" 2>/dev/null | awk '{ print $4; exit }')"
+		[ -n "$a" ] && { echo "${a%%/*}"; return; }
+	done
+}
+
 WAN_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n 1)"
 
 json_init
@@ -101,7 +110,7 @@ add_str kernel "$(uname -r)"
 add_str app_version "$(cat /usr/share/webcam/version 2>/dev/null)"
 add_str board_fw "$(json_get "$STATUS" @.board_fw)"
 add_str camera "$(camera_model)"
-add_str vpn_ip "$VPN_IP"
+add_str vpn_ip "$(vpn_ip)"
 add_str wan_ip "$WAN_IP"
 add_int uptime "$(cut -d. -f1 /proc/uptime)"
 add_int mem_free_kb "$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo)"
