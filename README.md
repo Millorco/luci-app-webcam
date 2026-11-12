@@ -53,7 +53,7 @@ chmod +x install.sh
 
 Lo script:
 1. mostra le release disponibili e chiede quale installare;
-2. installa o aggiorna le dipendenze (`gphoto2`, `libgphoto2-drivers-ptp2`, `curl`, `coreutils-stty`);
+2. installa o aggiorna le dipendenze (`gphoto2`, `libgphoto2-drivers-ptp2`, `curl`, `coreutils-stty`, e per la VPN `wireguard-tools`, `kmod-wireguard`, `luci-proto-wireguard`), con opkg o con apk (OpenWrt 25.12+);
 3. copia i file. Se esiste già una configurazione, chiede se sovrascriverla;
 4. abilita e avvia il servizio `webcam_capture`. Il servizio aggiunge al crontab di root, senza toccare gli altri job, l'heartbeat (ogni 3 minuti) e il controllo anti-appannamento (ogni 5 minuti).
 
