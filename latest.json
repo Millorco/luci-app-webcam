@@ -1,6 +1,6 @@
 {
-  "app": "1.0-rc1",
-  "app_url": "https://github.com/Millorco/luci-app-webcam/releases/tag/1.0-rc1",
+  "app": "1.0-rc2",
+  "app_url": "https://github.com/Millorco/luci-app-webcam/releases/tag/1.0-rc2",
   "fw": "2.2",
   "fw_url": "https://github.com/Millorco/luci-app-webcam/blob/main/board.ino"
 }

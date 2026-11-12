@@ -137,7 +137,7 @@ Archivio e file aggiuntivi (alla prima installazione sono tutti attivi, con la c
   "settings": { "iso": "100", "aperture": null, "shutterspeed": null },
   "day_start": 1794028774,
   "day_end": 1794068884,
-  "app_version": "1.0-rc1",
+  "app_version": "1.0-rc2",
   "climate": { "time": 1794058200, "sensor_ok": true, "temperature": 12.3, "humidity": 80,
                "dewpoint": 9.0, "heating_enabled": true, "heater": false, "board_fw": "2.2" }
 }
