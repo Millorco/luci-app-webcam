@@ -181,6 +181,9 @@ coreutils-stty
 curl
 gphoto2
 libgphoto2-drivers-ptp2
+wireguard-tools
+kmod-wireguard
+luci-proto-wireguard
 "
 
     echo ""
