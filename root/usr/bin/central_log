@@ -36,7 +36,7 @@ conf_get() {
 
 need_wireguard() {
 	command -v wg >/dev/null 2>&1 && [ -e /lib/netifd/proto/wireguard.sh ] && return 0
-	die "WireGuard non installato: opkg update && opkg install wireguard-tools kmod-wireguard"
+	die "WireGuard non installato: opkg update && opkg install wireguard-tools kmod-wireguard (su OpenWrt 25.12+: apk update && apk add wireguard-tools kmod-wireguard)"
 }
 
 # Zona firewall "wglog": dal tunnel entrano solo SSH, LuCI e ping. Chi può

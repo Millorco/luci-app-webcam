@@ -1,0 +1,132 @@
+#!/bin/sh
+# ---------------------------------------------------
+# Controllo degli aggiornamenti per la pagina Status di LuCI.
+#
+# Uso: check_updates [--force]
+# Scarica un piccolo file JSON con l'ultima versione dell'app e del
+# firmware della scheda (latest.json nella radice del repository, oppure
+# una copia sul proprio server indicata in webcam.general.update_url) e
+# lo salva in /tmp/webcam/updates.json. Il confronto con le versioni
+# installate lo fa la pagina Status.
+#
+# Il risultato resta valido 12 ore (1 ora se l'ultimo tentativo è
+# fallito, es. router senza rete): prima di allora lo script esce subito
+# con "fresh", così la pagina può chiamarlo a ogni apertura senza
+# consumare traffico. Il download gira in background con un timeout
+# breve e lo script risponde subito "started".
+# Si disattiva con: uci set webcam.general.update_check=0
+# ---------------------------------------------------
+
+DEFAULT_URL="https://raw.githubusercontent.com/Millorco/luci-app-webcam/main/latest.json"
+
+STATE_DIR=/tmp/webcam
+OUT="$STATE_DIR/updates.json"
+LOCK=/var/lock/webcam_updates.lock
+MAX_AGE=43200     # 12 ore
+RETRY_AGE=3600    # dopo un errore
+
+case "$1" in
+	''|--force|--run) ;;
+	*) echo "Uso: $0 [--force]" >&2; exit 2 ;;
+esac
+
+if [ "$(/sbin/uci -q get webcam.general.update_check 2>/dev/null)" = 0 ]; then
+	echo disabled
+	exit 0
+fi
+
+URL="$(/sbin/uci -q get webcam.general.update_url 2>/dev/null)"
+[ -n "$URL" ] || URL="$DEFAULT_URL"
+
+mkdir -p "$STATE_DIR"
+
+json_str() {
+	if [ -z "$1" ]; then
+		echo null
+	else
+		printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+	fi
+}
+
+# Campo di un JSON passato in $1
+field() {
+	jsonfilter -s "$1" -e "@.$2" 2>/dev/null | head -n 1
+}
+
+# Solo versioni e URL dall'aspetto ragionevole (il file arriva da fuori)
+clean_ver() { printf '%s' "$1" | grep -E '^[vV]?[0-9][0-9A-Za-z.\-]{0,30}$'; }
+clean_url() { printf '%s' "$1" | grep -E '^https?://[^[:space:]"<>\\]{1,300}$'; }
+
+run_check() {
+	local now data old="" err="" app fw app_url fw_url checked
+
+	now="$(date +%s)"
+	[ -s "$OUT" ] && old="$(cat "$OUT")"
+
+	data="$(curl -fsSL --connect-timeout 5 --max-time 20 --max-filesize 65536 \
+		-H 'User-Agent: luci-app-webcam' "$URL" 2>/dev/null)"
+
+	app="$(clean_ver "$(field "$data" app)")"
+	fw="$(clean_ver "$(field "$data" fw)")"
+
+	if [ -z "$app" ] && [ -z "$fw" ]; then
+		# Rete assente o file non valido: si tiene l'ultimo risultato buono
+		err="unreachable"
+		app="$(field "$old" app_latest)"
+		fw="$(field "$old" fw_latest)"
+		app_url="$(field "$old" app_url)"
+		fw_url="$(field "$old" fw_url)"
+		checked="$(field "$old" checked)"
+	else
+		app_url="$(clean_url "$(field "$data" app_url)")"
+		fw_url="$(clean_url "$(field "$data" fw_url)")"
+		checked="$now"
+	fi
+
+	cat > "$OUT.tmp" <<JSON
+{
+  "attempt": $now,
+  "checked": ${checked:-null},
+  "error": $(json_str "$err"),
+  "app_latest": $(json_str "$app"),
+  "app_url": $(json_str "$app_url"),
+  "fw_latest": $(json_str "$fw"),
+  "fw_url": $(json_str "$fw_url")
+}
+JSON
+	mv "$OUT.tmp" "$OUT"
+}
+
+if [ "$1" = --run ]; then
+	run_check
+	rmdir "$LOCK" 2>/dev/null
+	exit 0
+fi
+
+# Risultato ancora valido?
+if [ "$1" != --force ] && [ -s "$OUT" ]; then
+	cur="$(cat "$OUT")"
+	attempt="$(field "$cur" attempt)"
+	age=$(( $(date +%s) - ${attempt:-0} ))
+	limit=$MAX_AGE
+	[ -n "$(field "$cur" error)" ] && limit=$RETRY_AGE
+	if [ "$age" -ge 0 ] && [ "$age" -lt "$limit" ]; then
+		echo fresh
+		exit 0
+	fi
+fi
+
+# Un solo controllo alla volta (un lock più vecchio di 2 minuti è rimasto
+# da un controllo interrotto)
+if ! mkdir "$LOCK" 2>/dev/null; then
+	if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +2 2>/dev/null)" ]; then
+		rmdir "$LOCK" 2>/dev/null
+		mkdir "$LOCK" 2>/dev/null || { echo busy; exit 0; }
+	else
+		echo busy
+		exit 0
+	fi
+fi
+
+"$0" --run </dev/null >/dev/null 2>&1 &
+echo started

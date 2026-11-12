@@ -21,10 +21,76 @@ if [ ! -f "/etc/openwrt_release" ]; then
     exit 1
 fi
 
+# ----------------------------------------------------------
+# Gestore pacchetti: opkg (OpenWrt <= 24.10) o apk (OpenWrt >= 25.12)
+# ----------------------------------------------------------
+
+if command -v apk >/dev/null 2>&1; then
+    PKG_MGR="apk"
+elif command -v opkg >/dev/null 2>&1; then
+    PKG_MGR="opkg"
+else
+    echo -e "${RED}Errore: nessun gestore pacchetti trovato (opkg o apk)${NC}"
+    exit 1
+fi
+
+pkg_update() {
+    if [ "$PKG_MGR" = "apk" ]; then
+        apk update
+    else
+        opkg update
+    fi
+}
+
+pkg_install() {
+    if [ "$PKG_MGR" = "apk" ]; then
+        apk add "$1"
+    else
+        opkg install "$1"
+    fi
+}
+
+pkg_upgrade() {
+    if [ "$PKG_MGR" = "apk" ]; then
+        apk add --upgrade "$1"
+    else
+        opkg install "$1"
+    fi
+}
+
+# Estrae la versione dalle righe di "apk list" ("nome-versione arch {origine} ...")
+apk_version_of() {
+    awk -v p="$1-" '
+        index($1, p) == 1 {
+            v = substr($1, length(p) + 1)
+            if (v ~ /^[0-9]/) { print v; exit }
+        }'
+}
+
+pkg_installed_version() {
+    if [ "$PKG_MGR" = "apk" ]; then
+        apk list --installed "$1" 2>/dev/null | apk_version_of "$1"
+    else
+        opkg list-installed "$1" 2>/dev/null | awk '{print $3}'
+    fi
+}
+
+pkg_repo_version() {
+    if [ "$PKG_MGR" = "apk" ]; then
+        apk list --available "$1" 2>/dev/null | apk_version_of "$1"
+    else
+        opkg list "$1" 2>/dev/null | awk '{print $3}'
+    fi
+}
+
 # Verifica se wget è installato
 if ! command -v wget >/dev/null 2>&1; then
     echo -e "${RED}Errore: wget non è installato${NC}"
-    echo "Installalo con: opkg update && opkg install wget"
+    if [ "$PKG_MGR" = "apk" ]; then
+        echo "Installalo con: apk update && apk add wget-ssl"
+    else
+        echo "Installalo con: opkg update && opkg install wget-ssl"
+    fi
     exit 1
 fi
 
@@ -118,13 +184,15 @@ libgphoto2-drivers-ptp2
 "
 
     echo ""
-    echo -e "${GREEN}Controllo dei pacchetti necessari...${NC}"
+    echo -e "${GREEN}Controllo dei pacchetti necessari (gestore: $PKG_MGR)...${NC}"
 
-    opkg update >/dev/null 2>&1
+    if ! pkg_update >/dev/null 2>&1; then
+        echo -e "${YELLOW}Attenzione: aggiornamento dell'elenco pacchetti non riuscito, controllare la connessione${NC}"
+    fi
 
     for PKG in $REQUIRED_PACKAGES; do
-        INSTALLED_VERSION=$(opkg list-installed "$PKG" 2>/dev/null | awk '{print $3}')
-        REPO_VERSION=$(opkg list "$PKG" 2>/dev/null | awk '{print $3}')
+        INSTALLED_VERSION=$(pkg_installed_version "$PKG" || true)
+        REPO_VERSION=$(pkg_repo_version "$PKG" || true)
 
         if [ -n "$INSTALLED_VERSION" ]; then
             echo -e "${YELLOW}Trovato: ${PKG} (installato: $INSTALLED_VERSION, repo: $REPO_VERSION)${NC}"
@@ -140,7 +208,7 @@ libgphoto2-drivers-ptp2
             case "$resp" in
                 [sS]|[yY])
                     echo "Aggiorno $PKG..."
-                    opkg install "$PKG" >/dev/null 2>&1 || echo -e "${RED}Errore aggiornamento${NC}"
+                    pkg_upgrade "$PKG" >/dev/null 2>&1 || echo -e "${RED}Errore aggiornamento${NC}"
                     ;;
                 *)
                     echo "Mantengo la versione installata."
@@ -157,7 +225,7 @@ libgphoto2-drivers-ptp2
                     ;;
                 *)
                     echo "Installazione $PKG..."
-                    opkg install "$PKG" >/dev/null 2>&1 || echo -e "${RED}Errore installazione${NC}"
+                    pkg_install "$PKG" >/dev/null 2>&1 || echo -e "${RED}Errore installazione${NC}"
                     ;;
             esac
         fi
