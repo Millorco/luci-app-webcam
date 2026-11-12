@@ -110,7 +110,7 @@ Funzionano anche in modalità manutenzione. Dopo lo scatto la pagina mostra l'an
 
 Consigli per una webcam fissa:
 - **Messa a fuoco manuale**: metti a fuoco una volta sulla scena, poi sposta l'interruttore dell'obiettivo su **MF**. In AF la fotocamera rifiuta lo scatto ("PTP Device Busy") quando non riesce a mettere a fuoco, per esempio con nebbia o di notte.
-- **Esposizione**: con la ghiera su **M** imposta valori espliciti per giorno e notte (ad esempio giorno 1/250, f/8, ISO 100 e notte 15", f/5, ISO 1600). Con **Av/P** lascia i campi su *do not change*.
+- **Esposizione**: con la ghiera su **M** imposta valori espliciti per giorno e notte. Alla prima installazione sono già impostati giorno 1/500, f/8, ISO Auto (la fotocamera regola gli ISO alla luce, da sole pieno a cielo coperto) e notte 15", diaframma più aperto (f/5 con l'obiettivo di riferimento), ISO 1600. I valori sono gli indici delle scelte di gphoto2 di una Canon EOS: dopo `iso_export; aperture_export; shutterspeed_export` controlla in **Camera Setting** che corrispondano ancora, soprattutto il diaframma, che dipende dall'obiettivo. Con **Av/P** metti i campi su *do not change*.
 
 ### Photo Save
 
@@ -120,7 +120,7 @@ Consigli per una webcam fissa:
 - **Server, porta, cartella, utente e password**. Per SFTP si può indicare una chiave privata al posto della password.
 - **Skip certificate check**: solo per certificati self-signed. Se il certificato è valido ma intestato a un altro nome (tipico degli hosting condivisi), usa come server il nome presente nel certificato.
 
-Archivio e file aggiuntivi (tutti disattivati di default):
+Archivio e file aggiuntivi (alla prima installazione sono tutti attivi, con la copia chiamata `current`):
 
 - **Folders by date**: salva ogni foto in `<cartella>/AAAA/MM/GG/`, create in automatico. È lo schema usato da foto-webcam.eu e da gallerie pronte come [webcam.php](https://github.com/cloveras/webcam).
 - **Upload a copy as latest photo**: carica la foto anche come `<cartella>/current.jpg` (nome modificabile), sostituita a ogni scatto, comoda da mostrare in una pagina web. Viaggia come `current.jpg.part` e viene rinominata solo a upload finito, quindi chi apre la pagina vede sempre una foto intera (per un istante, tra la cancellazione della vecchia e la rinomina, il file può mancare). La foto viene inviata due volte, quindi il traffico raddoppia. Se solo la copia fallisce, l'esito nella pagina Status lo dice ma la foto in archivio resta caricata.
