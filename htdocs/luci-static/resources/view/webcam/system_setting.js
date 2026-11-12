@@ -75,7 +75,7 @@ return view.extend({
 		};
 
 		o = s.option(form.Value, 'inventory_url', _('Inventory URL'),
-			_('Address of <code>report.php</code> of the webcam inventory (webcam-logserver/inventario). Every 6 hours and at boot the router sends its technical data (model, versions, camera, VPN address, free space, last photo). Leave empty to disable.'));
+			_('Address of <code>report.php</code> of the webcam inventory (webcam-inventario). Every 6 hours and at boot the router sends its technical data (model, versions, camera, VPN address, free space, last photo). Leave empty to disable.'));
 		o.placeholder = 'https://www.example.com/inventario/report.php';
 		o.validate = function(section_id, value) {
 			if (value === '' || /^https?:\/\/[^\s"'`$\\]+$/.test(value))
