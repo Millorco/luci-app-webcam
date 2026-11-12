@@ -246,7 +246,7 @@ download_and_install() {
     echo "Scarico $SELECTED_VERSION..."
     echo "URL: $DOWNLOAD_URL"
 
-    if wget -q "$DOWNLOAD_URL" -O "$TEMP_DIR/webcam.tar.gz"; then
+    if download_file "$DOWNLOAD_URL" "$TEMP_DIR/webcam.tar.gz"; then
         echo -e "${GREEN}Download completato${NC}"
         
         cd "$TEMP_DIR" || exit 1
@@ -324,6 +324,17 @@ download_and_install() {
     echo "$SELECTED_VERSION" > /usr/share/webcam/version
 
     echo -e "${GREEN}Installazione completata${NC}"
+}
+
+# Scarica un file seguendo i redirect (github.com -> codeload.github.com).
+# Usa curl se presente (installato tra i pacchetti necessari), altrimenti wget.
+download_file() {
+    rm -f "$2"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fL --retry 2 --connect-timeout 20 -sS -o "$2" "$1" && [ -s "$2" ] && return 0
+        echo -e "${YELLOW}Download con curl non riuscito, provo con wget...${NC}"
+    fi
+    wget -O "$2" "$1" && [ -s "$2" ]
 }
 
 cleanup() {
