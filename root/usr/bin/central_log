@@ -1,15 +1,15 @@
 #!/bin/sh
 # ---------------------------------------------------
-# Log centralizzati: tunnel WireGuard verso il VPS e syslog remoto
-# (vedi https://github.com/Millorco/webcam-logserver).
+# VPN WireGuard verso il VPS: log remoto e accesso a LuCI/SSH dal PC
+# (vedi https://github.com/Millorco/webcam-vpn).
 #
 # Uso:
 #   central_log setup <peer.conf> [ip_syslog]
-#       importa il file del peer generato sul VPS (wireguard/peer_<nome>/
-#       peer_<nome>.conf), crea l'interfaccia wglog e manda il log del router
-#       a ip_syslog:514 via TCP (predefinito: .1 della rete del tunnel,
-#       es. 10.13.13.1)
-#   central_log off      toglie tunnel e syslog remoto
+#       importa il file .conf del peer scaricato da wg-easy, crea
+#       l'interfaccia wglog, apre dal tunnel SSH,
+#       LuCI e ping, e manda il log del router a ip_syslog:514 via TCP
+#       (predefinito: .1 della rete del tunnel, es. 10.13.13.1)
+#   central_log off      toglie tunnel, accesso e syslog remoto
 #   central_log status   mostra lo stato
 # ---------------------------------------------------
 
@@ -37,6 +37,74 @@ conf_get() {
 need_wireguard() {
 	command -v wg >/dev/null 2>&1 && [ -e /lib/netifd/proto/wireguard.sh ] && return 0
 	die "WireGuard non installato: opkg update && opkg install wireguard-tools kmod-wireguard (su OpenWrt 25.12+: apk update && apk add wireguard-tools kmod-wireguard)"
+}
+
+# Zona firewall "wglog": dal tunnel entrano solo SSH, LuCI e ping. Chi può
+# arrivarci lo decide il VPS (solo i peer "pc...", mai gli altri router).
+fw_open() {
+	local ports="22 80 443" p v
+
+	for p in $(uci -q show dropbear | sed -n "s/.*\.Port='\{0,1\}\([0-9]*\)'\{0,1\}$/\1/p"); do
+		case " $ports " in *" $p "*) ;; *) ports="$ports $p" ;; esac
+	done
+
+	fw_close
+	uci set firewall.$IFACE=zone
+	uci set firewall.$IFACE.name=$IFACE
+	uci add_list firewall.$IFACE.network=$IFACE
+	uci set firewall.$IFACE.input=REJECT
+	uci set firewall.$IFACE.output=ACCEPT
+	uci set firewall.$IFACE.forward=REJECT
+
+	uci set firewall.${IFACE}_admin=rule
+	uci set firewall.${IFACE}_admin.name='Allow-VPN-SSH-LuCI'
+	uci set firewall.${IFACE}_admin.src=$IFACE
+	uci set firewall.${IFACE}_admin.proto=tcp
+	uci set firewall.${IFACE}_admin.dest_port="$ports"
+	uci set firewall.${IFACE}_admin.target=ACCEPT
+
+	uci set firewall.${IFACE}_ping=rule
+	uci set firewall.${IFACE}_ping.name='Allow-VPN-Ping'
+	uci set firewall.${IFACE}_ping.src=$IFACE
+	uci set firewall.${IFACE}_ping.proto=icmp
+	uci set firewall.${IFACE}_ping.icmp_type=echo-request
+	uci set firewall.${IFACE}_ping.family=ipv4
+	uci set firewall.${IFACE}_ping.target=ACCEPT
+	uci commit firewall
+
+	# SSH: se dropbear ascolta solo su alcune interfacce (es. lan), aggiungo
+	# un'istanza sul tunnel con le stesse impostazioni della prima
+	if [ -z "$(uci -q get dropbear.$IFACE)" ] && \
+	   uci -q show dropbear | grep -q '=dropbear$' && \
+	   ! dropbear_listens_all; then
+		uci set dropbear.$IFACE=dropbear
+		uci set dropbear.$IFACE.Interface=$IFACE
+		for p in Port PasswordAuth RootPasswordAuth RootLogin; do
+			v=$(uci -q get dropbear.@dropbear[0].$p) && uci set dropbear.$IFACE.$p="$v"
+		done
+		uci commit dropbear
+	fi
+}
+
+# 0 se almeno un'istanza di dropbear ascolta su tutte le interfacce
+dropbear_listens_all() {
+	local i=0
+	while uci -q get dropbear.@dropbear[$i] >/dev/null; do
+		[ -z "$(uci -q get dropbear.@dropbear[$i].Interface)" ] && return 0
+		i=$((i + 1))
+	done
+	return 1
+}
+
+fw_close() {
+	uci -q delete firewall.$IFACE
+	uci -q delete firewall.${IFACE}_admin
+	uci -q delete firewall.${IFACE}_ping
+	uci commit firewall
+	if [ -n "$(uci -q get dropbear.$IFACE)" ]; then
+		uci delete dropbear.$IFACE
+		uci commit dropbear
+	fi
 }
 
 remove_wg() {
@@ -91,7 +159,10 @@ setup() {
 	[ -n "$psk" ] && uci set network.@wireguard_$IFACE[-1].preshared_key="$psk"
 	uci set network.@wireguard_$IFACE[-1].endpoint_host="$host"
 	uci set network.@wireguard_$IFACE[-1].endpoint_port="$port"
-	uci set network.@wireguard_$IFACE[-1].persistent_keepalive="${keep:-25}"
+	# Keepalive sempre attivo (wg-easy di serie mette 0): senza, dietro NAT
+	# o in 4G il router smette di essere raggiungibile dal PC
+	case "$keep" in ''|0|*[!0-9]*) keep=25 ;; esac
+	uci set network.@wireguard_$IFACE[-1].persistent_keepalive="$keep"
 	uci set network.@wireguard_$IFACE[-1].route_allowed_ips=1
 	# Nel tunnel solo la rete del tunnel, mai tutto il traffico
 	echo "$allowed" | tr ',' '\n' | while read -r a; do
@@ -108,25 +179,33 @@ setup() {
 	uci set system.@system[0].log_proto=tcp
 	uci commit system
 
+	fw_open
+
 	/etc/init.d/network reload
+	/etc/init.d/firewall reload >/dev/null 2>&1
 	sleep 5
+	/etc/init.d/dropbear restart >/dev/null 2>&1
 	/etc/init.d/log restart
 
 	logger -t central_log "Log remoto attivo verso $logip:$PORT (tunnel $IFACE verso $host:$port)"
 	echo "Tunnel $IFACE verso $host:$port, log remoto verso $logip:$PORT/tcp."
+	echo "Dal PC nella VPN: http://${addr%/*}/ e ssh root@${addr%/*}"
 	echo "Controlla con: central_log status"
 }
 
 off() {
 	remove_wg
 	uci commit network
+	fw_close
 	uci -q delete system.@system[0].log_ip
 	uci -q delete system.@system[0].log_port
 	uci -q delete system.@system[0].log_proto
 	uci commit system
 	/etc/init.d/network reload
+	/etc/init.d/firewall reload >/dev/null 2>&1
+	/etc/init.d/dropbear restart >/dev/null 2>&1
 	/etc/init.d/log restart
-	echo "Tunnel e log remoto disattivati."
+	echo "Tunnel, accesso dalla VPN e log remoto disattivati."
 }
 
 status() {
@@ -134,7 +213,10 @@ status() {
 	logip=$(uci -q get system.@system[0].log_ip)
 	echo "Log remoto: ${logip:-disattivato}${logip:+:$(uci -q get system.@system[0].log_port) $(uci -q get system.@system[0].log_proto)}"
 	if command -v wg >/dev/null 2>&1 && wg show $IFACE >/dev/null 2>&1; then
+		echo "Indirizzo nel tunnel: $(uci -q get network.$IFACE.addresses)"
 		wg show $IFACE | grep -E 'endpoint|latest handshake|transfer'
+		[ -n "$(uci -q get firewall.${IFACE}_admin)" ] && \
+			echo "Accesso dal tunnel: TCP $(uci -q get firewall.${IFACE}_admin.dest_port) e ping"
 		[ -n "$logip" ] && { ping -c 2 -W 2 "$logip" >/dev/null 2>&1 && echo "Server $logip raggiungibile" || echo "Server $logip NON raggiungibile"; }
 	else
 		echo "Tunnel $IFACE: non attivo"
@@ -145,5 +227,5 @@ case "$1" in
 	setup) [ -n "$2" ] || die "uso: $0 setup <peer.conf> [ip_syslog]"; setup "$2" "$3" ;;
 	off) off ;;
 	status) status ;;
-	*) sed -n '3,13p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+	*) sed -n '3,14p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
