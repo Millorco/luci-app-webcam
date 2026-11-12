@@ -1,0 +1,153 @@
+#!/bin/sh
+# ---------------------------------------------------
+# Invia i dati tecnici del router all'inventario delle webcam
+# (report.php di webcam-inventario): modello, versioni,
+# fotocamera, IP nella VPN, spazio libero, ultimo scatto...
+#
+# Uso: inventory_report [--cron|--boot|--print]
+#   (nessuna opzione)  invia subito
+#   --cron   attende da 0 a 15 minuti a caso, così i router non
+#            arrivano tutti insieme (usato dal cron ogni 6 ore)
+#   --boot   attende la sincronizzazione dell'ora (serve per HTTPS)
+#   --print  stampa il JSON senza inviarlo
+#
+# URL e token sono le opzioni webcam.@general[0].inventory_url e
+# inventory_token. Se l'URL è vuoto non fa nulla.
+# ---------------------------------------------------
+
+. /usr/bin/webcam.cfg
+. /usr/share/libubox/jshn.sh
+
+MODE="$1"
+case "$MODE" in ''|--cron|--boot|--print) ;; *) sed -n '3,16p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;; esac
+
+URL="$(wc_get webcam.@general[0].inventory_url)"
+TOKEN="$(wc_get webcam.@general[0].inventory_token)"
+[ -n "$URL" ] || [ "$MODE" = --print ] || exit 0
+
+case "$URL" in
+	''|http://*|https://*) ;;
+	*) logger -t inventory "inventory_url non valido: deve iniziare con http:// o https://"; exit 1 ;;
+esac
+
+# Un solo invio alla volta
+LOCK=/var/lock/webcam_inventory.lock
+mkdir "$LOCK" 2>/dev/null || {
+	[ $(( $(date +%s) - $(date -r "$LOCK" +%s 2>/dev/null || echo 0) )) -gt 1800 ] || exit 0
+}
+trap 'rmdir "$LOCK" 2>/dev/null' EXIT INT TERM
+
+case "$MODE" in
+	--cron) sleep "$(awk 'BEGIN { srand(); print int(rand() * 900) }')" ;;
+	--boot)
+		i=0
+		while [ ! -e /var/run/webcam_ntp_synced ] && [ "$i" -lt 60 ]; do
+			sleep 10; i=$((i + 1))
+		done
+		sleep 30
+		;;
+esac
+
+# MAC della prima scheda di rete fisica: identifica il router anche se
+# cambia nome
+get_mac() {
+	local i m
+	for i in eth0 br-lan $(ls /sys/class/net 2>/dev/null); do
+		m="$(cat "/sys/class/net/$i/address" 2>/dev/null)"
+		case "$m" in ''|00:00:00:00:00:00) continue ;; esac
+		echo "$m"
+		return
+	done
+}
+
+json_get() { [ -s "$1" ] && jsonfilter -i "$1" -e "$2" 2>/dev/null | head -n 1; }
+
+add_str() { [ -n "$2" ] && json_add_string "$1" "$2"; }
+add_int() { case "$2" in ''|*[!0-9]*) ;; *) json_add_int "$1" "$2" ;; esac; }
+add_num() { case "$2" in ''|*[!0-9.-]*) ;; *) json_add_string "$1" "$2" ;; esac; }
+add_bool() { [ -n "$2" ] && json_add_boolean "$1" "$( [ "$2" = 1 ] && echo 1 || echo 0 )"; }
+
+# Fotocamera: modello salvato da check_camera_model, altrimenti gphoto2
+# (solo se non sta scattando, per non disturbare lo scatto)
+camera_model() {
+	local m
+	m="$(cat /tmp/last_camera_model.txt 2>/dev/null)"
+	if [ -z "$m" ] && [ ! -d /var/lock/webcam_capture.lock ] && command -v gphoto2 >/dev/null; then
+		m="$(gphoto2 --auto-detect 2>/dev/null | awk 'NR > 2 && NF { sub(/[ \t]+usb:.*$/, ""); print; exit }')"
+	fi
+	echo "$m" | sed 's/[[:space:]]*$//'
+}
+
+queue_count() {
+	local dir="${WC_QUEUE_DIR:-/tmp/webcam/queue}"
+	[ -d "$dir" ] || { echo 0; return; }
+	find "$dir" -type f -name '*.jpg' 2>/dev/null | wc -l
+}
+
+. /etc/openwrt_release 2>/dev/null
+
+STATUS="$WC_STATE_DIR/status.json"
+CAPTURE="$WC_STATE_DIR/capture.json"
+VPN_IP="$(uci -q get network.wglog.addresses | awk '{ print $1 }')"
+VPN_IP="${VPN_IP%%/*}"
+WAN_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n 1)"
+
+json_init
+add_str mac "$(get_mac)"
+add_str hostname "$(uci -q get system.@system[0].hostname || cat /proc/sys/kernel/hostname)"
+add_str model "$(cat /tmp/sysinfo/model 2>/dev/null)"
+add_str openwrt "${DISTRIB_DESCRIPTION:-$DISTRIB_RELEASE}"
+add_str kernel "$(uname -r)"
+add_str app_version "$(cat /usr/share/webcam/version 2>/dev/null)"
+add_str board_fw "$(json_get "$STATUS" @.board_fw)"
+add_str camera "$(camera_model)"
+add_str vpn_ip "$VPN_IP"
+add_str wan_ip "$WAN_IP"
+add_int uptime "$(cut -d. -f1 /proc/uptime)"
+add_int mem_free_kb "$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo)"
+add_int disk_free_kb "$(df -k /overlay 2>/dev/null | awk 'NR == 2 { print $4 }')"
+add_int queue "$(queue_count | tr -d ' ')"
+add_str upload_protocol "$WC_UPLOAD_PROTOCOL"
+add_str upload_server "$WC_UPLOAD_SERVER"
+add_str upload_directory "$WC_UPLOAD_DIRECTORY"
+add_int interval "$(wc_get webcam.@shooting[0].photo_time_lapse)"
+add_bool maintenance "$WC_MAINTENANCE_MODE"
+add_bool heating "$WC_HEATING"
+add_bool monitoring "$( [ -n "$(wc_get webcam.@general[0].ping_url)" ] && echo 1 || echo 0)"
+add_num lat "$WC_LATITUDE"
+add_num lon "$WC_LONGITUDE"
+# Temperatura e umidità solo se la lettura è recente (meno di 15 minuti)
+T="$(json_get "$STATUS" @.time)"
+case "$T" in ''|*[!0-9]*) T=0 ;; esac
+if [ $(( $(date +%s) - T )) -lt 900 ]; then
+	add_num temperature "$(json_get "$STATUS" @.temperature)"
+	add_num humidity "$(json_get "$STATUS" @.humidity)"
+fi
+add_int last_capture_time "$(json_get "$CAPTURE" @.time)"
+add_str last_capture_file "$(json_get "$CAPTURE" @.file)"
+add_int time "$(date +%s)"
+DATA="$(json_dump)"
+
+if [ "$MODE" = --print ]; then
+	echo "$DATA"
+	exit 0
+fi
+
+TRIES=3
+[ "$MODE" = --boot ] && TRIES=6
+i=1
+while :; do
+	RES="$(printf '%s' "$DATA" | curl -sS -m 20 -w '\n%{http_code}' \
+		-H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
+		-H 'User-Agent: luci-app-webcam' --data-binary @- "$URL" 2>&1)"
+	CODE="$(echo "$RES" | tail -n 1)"
+	[ "$CODE" = 200 ] && exit 0
+	# Token o dati rifiutati: inutile riprovare
+	case "$CODE" in 400|401|403|404|405) break ;; esac
+	[ "$i" -ge "$TRIES" ] && break
+	i=$((i + 1))
+	sleep 30
+done
+
+logger -t inventory "Invio all'inventario non riuscito (HTTP ${CODE:-?}): $(echo "$RES" | head -n 1 | cut -c1-200)"
+exit 1

@@ -94,7 +94,7 @@ Funzionano anche in modalità manutenzione. Dopo lo scatto la pagina mostra l'an
 - **Wait for NTP**: minuti massimi di attesa della sincronizzazione dell'ora dopo un riavvio (predefinito 30, 0 = senza limite). Vedi [Ora dopo un riavvio](#ora-dopo-un-riavvio).
 - **Temperature scale**: °C o °F nella pagina Status.
 - **Anti-fog Heating**: abilita il controllo automatico e ne imposta le soglie (margine dal punto di rugiada, temperatura minima, isteresi, ventola insieme al riscaldamento).
-- **Monitoring**: URL di ping di [healthchecks.io](https://healthchecks.io), vedi [Monitoraggio e log centralizzati](#monitoraggio-e-log-centralizzati).
+- **Monitoring**: URL di ping di [healthchecks.io](https://healthchecks.io) e indirizzo dell'inventario delle webcam, vedi [Monitoraggio e log centralizzati](#monitoraggio-e-log-centralizzati).
 - **Check for updates** / **Update info URL**: attiva il controllo degli aggiornamenti della pagina Status e indica da dove leggere le ultime versioni. Vuoto = `latest.json` su GitHub. Con il repository privato il router non può leggerlo, quindi metti una copia del file su un server raggiungibile (per esempio il proprio sito) e scrivi qui il suo indirizzo.
 - **Serial Port**: `/dev/ttyS1` a 9600 baud per la scheda.
 
@@ -137,7 +137,7 @@ Archivio e file aggiuntivi (alla prima installazione sono tutti attivi, con la c
   "settings": { "iso": "100", "aperture": null, "shutterspeed": null },
   "day_start": 1794028774,
   "day_end": 1794068884,
-  "app_version": "1.0-rc2",
+  "app_version": "1.0-rc3",
   "climate": { "time": 1794058200, "sensor_ok": true, "temperature": 12.3, "humidity": 80,
                "dewpoint": 9.0, "heating_enabled": true, "heater": false, "board_fw": "2.2" }
 }
@@ -224,6 +224,7 @@ Poi registra con timestamp ogni comando ricevuto e ogni cambio dei relè, e ogni
 ## Monitoraggio e log centralizzati
 
 - **Avvisi**: crea un check su [healthchecks.io](https://healthchecks.io) per ogni webcam, con *Period* uguale all'intervallo di scatto e *Grace time* almeno doppio, e copia il ping URL in **System → Monitoring**. Il router fa un ping dopo ogni foto caricata e un ping `/fail` con il messaggio a ogni errore. Scrive nel registro del check anche gli avvii del servizio (con l'uptime, per vedere i riavvii) e la modalità manutenzione. Se il router si spegne, l'allarme arriva alla fine del grace time.
+- **Inventario**: con **Inventory URL** e **Inventory token** in **System → Monitoring** il router manda ogni 6 ore e all'avvio i suoi dati tecnici (modello, versioni di OpenWrt, dell'app e del firmware della scheda, fotocamera, IP nella VPN, spazio libero, ultimo scatto) all'inventario delle webcam e dei clienti, una piccola app PHP con MariaDB che sta in [webcam-inventario](https://github.com/Millorco/webcam-inventario). `inventory_report --print` mostra cosa viene inviato, `inventory_report` lo invia subito.
 - **Log**: OpenWrt può mandare il suo log a un server syslog (**System → System → Logging**). Il server con VictoriaLogs (Docker), con o senza VPN, è nel repository [webcam-logserver](https://github.com/Millorco/webcam-logserver). La VPN WireGuard a stella (wg-easy) è in [webcam-vpn](https://github.com/Millorco/webcam-vpn): i router si collegano al VPS, tu ti colleghi dal PC e apri LuCI e SSH di ogni router, anche in 4G. Sul router basta `central_log setup <nome>.conf` con il file scaricato da wg-easy, che crea il tunnel, apre dal tunnel solo SSH, LuCI e ping e manda lì il log (che VictoriaLogs riceve con la variante `wireguard/` di webcam-logserver).
 
 ## Risoluzione dei problemi
@@ -269,6 +270,7 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
     │   ├── capture_now                        scatto manuale dalla pagina Status
     │   ├── check_updates                      cerca nuove versioni di app e firmware
     │   ├── central_log                        VPN WireGuard: log remoto, LuCI/SSH
+    │   ├── inventory_report                   dati del router all'inventario webcam
     │   ├── climate                            anti-appannamento
     │   ├── heartbeat, serialsend, read_temp   comandi verso la scheda
     │   ├── iso_export, aperture_export,
