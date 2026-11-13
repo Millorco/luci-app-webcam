@@ -55,7 +55,7 @@ Lo script:
 1. mostra le release disponibili e chiede quale installare;
 2. installa o aggiorna le dipendenze (`gphoto2`, `libgphoto2-drivers-ptp2`, `curl`, `coreutils-stty`, e per la VPN `wireguard-tools`, `kmod-wireguard`, `luci-proto-wireguard`), con opkg o con apk (OpenWrt 25.12+);
 3. copia i file. Se esiste già una configurazione, chiede se sovrascriverla;
-4. abilita e avvia il servizio `webcam_capture`. Il servizio aggiunge al crontab di root, senza toccare gli altri job, l'heartbeat (ogni 3 minuti) e il controllo anti-appannamento (ogni 5 minuti).
+4. abilita e avvia il servizio `webcam_capture`. Il servizio aggiunge al crontab di root, senza toccare gli altri job, l'heartbeat (ogni 3 minuti) e il controllo anti-appannamento (ogni 5 minuti). Imposta anche `cronloglevel` a 9 in `/etc/config/system`, così crond non scrive più nel log una riga a livello errore per ogni job eseguito.
 
 Dopo l'installazione, con la fotocamera collegata e accesa, genera gli elenchi di ISO, diaframmi e tempi che compaiono nei menu di LuCI:
 
@@ -170,6 +170,7 @@ Il GL-MT300N-V2 non ha un orologio a batteria: dopo ogni riavvio, compresi i cic
   6. se l'upload è riuscito toglie la foto dalla coda e ritenta quelle arretrate, poi scrive l'esito e il numero di foto in coda in `/tmp/webcam/capture.json`.
 - **`climate`** (cron, ogni 5 minuti): legge T e RH, calcola il punto di rugiada (formula di Magnus) e accende riscaldamento e ventola se `T − Td` è sotto il margine o `T` è sotto la minima, con isteresi per lo spegnimento. Lo stato va in `/tmp/webcam/status.json`. Se il sensore non risponde, lo stato del riscaldamento resta invariato.
 - **`heartbeat`** (cron, ogni 3 minuti): invia `b` alla scheda. Dopo 10 minuti senza heartbeat la scheda spegne e riaccende router e fotocamera.
+- **Livelli di log**: `capture` e `capture_service` scrivono le righe `ERRORE` a livello err, `ATTENZIONE` a warning, `OK foto caricata` e `OK caricate N foto rimaste in coda` a info, il resto a notice. Ogni `ERRORE` dice la causa: fotocamera non trovata su USB, scatto fallito (USB occupata, messa a fuoco, scheda di memoria, comunicazione), memoria del router piena, chiavetta della coda non montata, upload fallito (rete giù, DNS, credenziali, server spento, certificato, spazio o permessi sul server), sensore che non risponde, invio all'inventario non riuscito. Nel server dei log (VictoriaLogs) si filtrano con `level:error` o `level:info`.
 - **`/usr/libexec/webcam/serial`**: unico punto di accesso alla seriale, con lock e una pausa di 2 secondi tra un comando e l'altro.
 
 ## Scheda relè e sensore

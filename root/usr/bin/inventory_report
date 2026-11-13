@@ -27,7 +27,7 @@ TOKEN="$(wc_get webcam.@general[0].inventory_token)"
 
 case "$URL" in
 	''|http://*|https://*) ;;
-	*) logger -t inventory "inventory_url non valido: deve iniziare con http:// o https://"; exit 1 ;;
+	*) logger -p user.err -t inventory "ERRORE: inventory_url non valido: deve iniziare con http:// o https://"; exit 1 ;;
 esac
 
 # Un solo invio alla volta
@@ -158,5 +158,5 @@ while :; do
 	sleep 30
 done
 
-logger -t inventory "Invio all'inventario non riuscito (HTTP ${CODE:-?}): $(echo "$RES" | head -n 1 | cut -c1-200)"
+logger -p user.err -t inventory "ERRORE: invio all'inventario non riuscito (HTTP ${CODE:-?}): $(echo "$RES" | head -n 1 | cut -c1-200)"
 exit 1

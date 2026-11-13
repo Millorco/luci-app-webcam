@@ -5,8 +5,19 @@ LOGTAG="${WC_NAME:-webcam} capture"
 SCHEDULE=/usr/libexec/webcam/schedule
 PING=/usr/libexec/webcam/hc_ping
 
+# Livello syslog dal prefisso del messaggio, così in VictoriaLogs gli
+# errori sono rossi, gli avvisi gialli e le foto caricate verdi.
+log_prio() {
+    case "$1" in
+        ERRORE*) echo user.err ;;
+        ATTENZIONE*) echo user.warning ;;
+        OK*) echo user.info ;;
+        *) echo user.notice ;;
+    esac
+}
+
 log() {
-    logger -t "$LOGTAG" "$@"
+    logger -p "$(log_prio "$*")" -t "$LOGTAG" "$@"
 }
 
 LAST_SPECIAL=""
@@ -43,7 +54,7 @@ wait_for_clock() {
             log "Client NTP disattivato: non attendo la sincronizzazione dell'ora."
             return 0
         fi
-        log "Client NTP disattivato e ora del router non valida ($(date)): attivalo in Sistema > Sistema."
+        log "ERRORE: client NTP disattivato e ora del router non valida ($(date)): attivalo in Sistema > Sistema."
     fi
 
     # Minuti massimi di attesa; 0 = attende senza limite
@@ -61,7 +72,7 @@ wait_for_clock() {
                 return 1
             fi
             if [ "$warned" = 0 ]; then
-                log "Ora del router non valida ($(date)) e nessuna risposta NTP: non scatto finché l'ora non è corretta."
+                log "ERRORE: ora del router non valida ($(date)) e nessuna risposta NTP: non scatto finché l'ora non è corretta."
                 warned=1
             fi
         fi
@@ -88,7 +99,7 @@ while true; do
     # Sanity checks
     case "$WC_TIME_LAPSE" in
         ''|*[!0-9]*|0)
-            log "Invalid or missing 'photo_time_lapse'. Using default: 10 minutes."
+            log "ATTENZIONE: intervallo di scatto 'photo_time_lapse' mancante o non valido, uso 10 minuti."
             WC_TIME_LAPSE=10
             ;;
     esac
@@ -132,11 +143,15 @@ EOF
 
     # Check maintenance mode
     if [ "$WC_MAINTENANCE_MODE" -eq 0 ]; then
-        if ! /usr/bin/capture; then
-            log "Capture command failed."
-        fi
+        /usr/bin/capture
+        RC=$?
+        # capture ha già scritto il motivo come ERRORE; qui solo i casi anomali
+        case "$RC" in
+            0|1|3) ;;
+            *) log "ERRORE: capture terminato in modo anomalo (codice $RC)" ;;
+        esac
     else
-        log "Maintenance mode active."
+        log "Modalità manutenzione attiva: nessuno scatto."
     fi
 
     # Sleep for the rest of the interval, so the shot duration doesn't add up

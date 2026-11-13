@@ -42,7 +42,7 @@ take_lock() {
 	return 1
 }
 if ! take_lock; then
-	logger -t "$WC_NAME capture" "Uno scatto è già in corso: questo viene saltato."
+	logger -p user.warning -t "$WC_NAME capture" "ATTENZIONE: uno scatto è già in corso, questo viene saltato."
 	[ -t 2 ] && echo "Uno scatto è già in corso." >&2
 	exit 3
 fi
@@ -63,9 +63,20 @@ SPECIAL="${WC_SPECIAL:-}"
 
 # Sul terminale solo se lanciato a mano: sotto procd lo stderr finirebbe
 # nel syslog come "sh" a livello err, doppione della riga di logger.
+# Livello syslog dal prefisso del messaggio, così in VictoriaLogs gli
+# errori sono rossi, gli avvisi gialli e le foto caricate verdi.
+log_prio() {
+	case "$1" in
+		ERRORE*) echo user.err ;;
+		ATTENZIONE*) echo user.warning ;;
+		OK*) echo user.info ;;
+		*) echo user.notice ;;
+	esac
+}
+
 log() {
 	[ -t 2 ] && echo "$@" >&2
-	logger -t "$WC_NAME capture" "$@"
+	logger -p "$(log_prio "$*")" -t "$WC_NAME capture" "$@"
 }
 
 # Stringa JSON con escape di \ e " (null se vuota). Gli a capo e le
@@ -211,12 +222,48 @@ camera_power_cycle() {
 		sleep 5
 		gphoto2 --auto-detect 2>/dev/null | grep -q usb: && return 0
 	done
-	log "La fotocamera non è ricomparsa su USB dopo il riavvio."
+	log "ERRORE: la fotocamera non è ricomparsa su USB dopo il riavvio dalla scheda."
 	return 1
 }
 
+# Causa leggibile dell'ultimo errore di gphoto2, seguita dal testo originale
+gphoto_reason() {
+	local err cause
+
+	err="$(tail -n 3 "$WORK_DIR/gphoto2.err" 2>/dev/null | tr '\n' ' ' | sed 's/  */ /g; s/ $//')"
+	case "$err" in
+		*"Could not detect any camera"*|*"No camera found"*|*"Unknown model"*)
+			cause="fotocamera non trovata su USB (spenta, cavo scollegato o batteria scarica)" ;;
+		*"Could not claim the USB device"*|*"Could not lock the device"*)
+			cause="USB della fotocamera occupata da un altro processo" ;;
+		*"Out of Focus"*|*"focus"*|*"Focus"*)
+			cause="messa a fuoco non riuscita (autofocus attivo con poca luce o nebbia?)" ;;
+		*"No space"*|*"Card"*|*"card"*|*"Storage"*|*"storage"*)
+			cause="problema con la scheda di memoria della fotocamera (piena, assente o protetta)" ;;
+		*"I/O"*|*"PTP"*|*"timeout"*|*"Timeout"*)
+			cause="errore di comunicazione USB con la fotocamera" ;;
+		*"Bad parameters"*|*"Bad file descriptor"*|*"Unsupported"*)
+			cause="impostazione non accettata dalla fotocamera (ghiera su M? ISO, diaframma o tempo fuori gamma?)" ;;
+		'')
+			cause="la fotocamera non ha restituito nessun file" ;;
+		*)
+			cause="errore della fotocamera" ;;
+	esac
+	[ -n "$err" ] && cause="$cause - gphoto2: $err"
+	echo "$cause"
+}
+
+# Spazio libero in KB nella cartella $1
+free_kb() {
+	df -Pk "$1" 2>/dev/null | awk 'NR == 2 { print $4 }'
+}
+
+camera_present() {
+	gphoto2 --auto-detect 2>/dev/null | grep -q usb:
+}
+
 capture() {
-	local rc
+	local rc free
 
 	if [ "$MODE" = day ]; then
 		iso="$WC_ISO_DAY"; aperture="$WC_APERTURE_DAY"; shutter="$WC_SHUTTERSPEED_DAY"
@@ -225,6 +272,19 @@ capture() {
 	fi
 
 	rm -f "$WORK_DIR"/*.jpg "$WORK_DIR"/*.json 2>/dev/null
+
+	# Una foto RAW+JPEG grande può superare i 30 MB: con /tmp (RAM) pieno
+	# gphoto2 fallirebbe con un errore poco chiaro
+	free=$(free_kb "$WORK_DIR")
+	if [ -n "$free" ] && [ "$free" -lt 10240 ]; then
+		fail "memoria del router quasi piena: in $WORK_DIR restano ${free} KB (la coda di upload in /tmp è troppo grande?)"
+	fi
+
+	if ! camera_present; then
+		log "ERRORE: fotocamera non trovata su USB, provo a riaccenderla dalla scheda."
+		camera_power_cycle || \
+			fail "fotocamera non trovata su USB anche dopo il riavvio dalla scheda: controlla alimentazione, cavo USB e che sia accesa"
+	fi
 
 	# Spegne il riscaldamento durante lo scatto per avere abbastanza corrente
 	touch "$CAPTURE_FLAG"
@@ -235,7 +295,7 @@ capture() {
 	shoot "$iso" "$aperture" "$shutter"
 	rc=$?
 	if [ "$rc" -ne 0 ] || [ ! -f "$FILENAME" ]; then
-		log "Primo tentativo fallito: $(tail -n 3 "$WORK_DIR/gphoto2.err" | tr '\n' ' ')"
+		log "ATTENZIONE: primo tentativo di scatto fallito ($(gphoto_reason)), riavvio la fotocamera e riprovo."
 		camera_power_cycle
 		shoot "$iso" "$aperture" "$shutter"
 		rc=$?
@@ -249,7 +309,7 @@ capture() {
 	fi
 
 	if [ "$rc" -ne 0 ] || [ ! -f "$FILENAME" ]; then
-		fail "scatto fallito: $(tail -n 3 "$WORK_DIR/gphoto2.err" | tr '\n' ' ')"
+		fail "scatto fallito dopo il riavvio della fotocamera: $(gphoto_reason)"
 	fi
 }
 
@@ -346,7 +406,44 @@ put_file() {
 	fi
 
 	url="$base$REMOTE_DIR$tmp"
-	curl "$@" "$url"
+	# L'errore di curl va in un file: sotto procd finirebbe nel syslog
+	# come "sh" a livello err, senza dire di quale foto si tratta
+	curl "$@" "$url" 2>"$WORK_DIR/curl.err"
+}
+
+# Causa leggibile dell'ultimo upload fallito: prima la rete, poi curl
+upload_reason() {
+	local err
+
+	err="$(tail -n 2 "$WORK_DIR/curl.err" 2>/dev/null | tr '\n' ' ' | sed 's/^curl: //; s/  */ /g; s/ $//')"
+	if ! ip route show default 2>/dev/null | grep -q .; then
+		echo "rete giù: il router non ha una route predefinita (4G/WAN scollegata?)${err:+ - curl: $err}"
+		return
+	fi
+	case "$WC_UPLOAD_SERVER" in
+		*[!0-9.]*) ;;   # nome: si controlla il DNS
+		*) set -- ip ;; # indirizzo IP: niente da risolvere
+	esac
+	if [ "$1" != ip ] && ! nslookup "$WC_UPLOAD_SERVER" >/dev/null 2>&1; then
+		echo "il nome $WC_UPLOAD_SERVER non si risolve (DNS o connessione internet assente)${err:+ - curl: $err}"
+		return
+	fi
+	case "$err" in
+		*"Login denied"*|*"Access denied"*|*"530"*|*"Authentication failure"*|*"authentication"*)
+			echo "credenziali di upload rifiutate dal server - curl: $err" ;;
+		*"Connection refused"*|*"Failed to connect"*|*"Couldn't connect"*)
+			echo "server di upload non raggiungibile (servizio spento o porta chiusa) - curl: $err" ;;
+		*"timed out"*|*"Timeout"*)
+			echo "il server di upload non risponde in tempo (connessione lenta?) - curl: $err" ;;
+		*"certificate"*|*"SSL"*|*"TLS"*)
+			echo "problema con il certificato TLS del server - curl: $err" ;;
+		*"Quota"*|*"quota"*|*"552"*|*"Disk full"*|*"No space"*)
+			echo "spazio esaurito sul server di upload - curl: $err" ;;
+		*"550"*|*"Permission denied"*|*"Access to"*)
+			echo "permessi mancanti sulla cartella remota - curl: $err" ;;
+		'') echo "motivo sconosciuto" ;;
+		*) echo "curl: $err" ;;
+	esac
 }
 
 # ---------------------------------------------------
@@ -372,7 +469,7 @@ setup_queue() {
 		if [ -d "$WC_QUEUE_DIR" ]; then
 			QUEUE_DIR="${WC_QUEUE_DIR%/}"
 		else
-			log "ATTENZIONE: cartella della coda $WC_QUEUE_DIR non trovata (chiavetta non montata?), uso $QUEUE_DIR."
+			log "ERRORE: cartella della coda $WC_QUEUE_DIR non trovata (chiavetta USB non montata o guasta?), uso $QUEUE_DIR in RAM."
 		fi
 	fi
 	[ "$WC_QUEUE_SIZE" -gt 0 ] && mkdir -p "$QUEUE_DIR"
@@ -424,7 +521,7 @@ queue_remove() {
 }
 
 queue_free_kb() {
-	df -Pk "$QUEUE_DIR" 2>/dev/null | awk 'NR == 2 { print $4 }'
+	free_kb "$QUEUE_DIR"
 }
 
 # Rispetta il limite in MB e lascia libero lo spazio di riserva,
@@ -454,7 +551,7 @@ upload_photo() {
 	put_file "$jpg" "$rel" || return 1
 	if [ -f "${jpg%.jpg}.json" ]; then
 		put_file "${jpg%.jpg}.json" "${rel%.jpg}.json" || \
-			log "ATTENZIONE: upload del file di dati ${rel%.jpg}.json fallito"
+			log "ATTENZIONE: upload del file di dati ${rel%.jpg}.json fallito ($(upload_reason))"
 	fi
 	return 0
 }
@@ -480,12 +577,12 @@ queue_drain() {
 			queue_remove "$f"
 			sent=$(( sent + 1 ))
 		else
-			log "Upload della foto in coda $rel fallito: riprovo al prossimo giro."
+			log "ATTENZIONE: upload della foto in coda $rel fallito ($(upload_reason)): riprovo al prossimo giro."
 			break
 		fi
 	done < "$WORK_DIR/queue.lst"
 	rm -f "$WORK_DIR/queue.lst"
-	[ "$sent" -gt 0 ] && log "Caricate $sent foto rimaste in coda, ne restano $(queue_count)."
+	[ "$sent" -gt 0 ] && log "OK caricate $sent foto rimaste in coda, ne restano $(queue_count)."
 	return 0
 }
 
@@ -511,7 +608,7 @@ upload() {
 
 	setup_queue
 	queue_add "$WORK_DIR/$FILENAME" "$archive$FILENAME" || \
-		log "ATTENZIONE: impossibile mettere in coda $FILENAME"
+		log "ERRORE: impossibile mettere in coda $FILENAME (spazio libero in $QUEUE_DIR: $(free_kb "$QUEUE_DIR") KB): se l'upload fallisce la foto va persa"
 	queue_prune
 
 	# Prima la foto nuova, così l'archivio e current.jpg sono aggiornati
@@ -519,13 +616,13 @@ upload() {
 	if ! upload_photo "$WORK_DIR/$FILENAME" "$archive$FILENAME"; then
 		QUEUED=$(queue_count)
 		if queue_enabled; then
-			fail "upload fallito verso $WC_UPLOAD_PROTOCOL://$WC_UPLOAD_SERVER/$dir$archive, foto in coda: $QUEUED"
+			fail "upload fallito verso $WC_UPLOAD_PROTOCOL://$WC_UPLOAD_SERVER/$dir$archive ($(upload_reason)), foto in coda: $QUEUED"
 		fi
-		fail "upload fallito verso $WC_UPLOAD_PROTOCOL://$WC_UPLOAD_SERVER/$dir$archive"
+		fail "upload fallito verso $WC_UPLOAD_PROTOCOL://$WC_UPLOAD_SERVER/$dir$archive ($(upload_reason))"
 	fi
 	queue_enabled && queue_remove "$QUEUE_DIR/$archive$FILENAME"
 
-	log "Upload completato: $archive$FILENAME ($MODE${SPECIAL:+, $SPECIAL}, $WC_UPLOAD_PROTOCOL)"
+	log "OK foto caricata: $archive$FILENAME ($MODE${SPECIAL:+, $SPECIAL}, $WC_UPLOAD_PROTOCOL)"
 
 	# Copia dell'ultima foto con nome fisso, per pagine web e incorporamenti
 	if [ "$WC_UPLOAD_LATEST" = 1 ]; then
@@ -540,7 +637,7 @@ upload() {
 					log "ATTENZIONE: upload di $latest.json fallito"
 			fi
 		else
-			log "ATTENZIONE: upload della copia $latest.jpg fallito"
+			log "ATTENZIONE: upload della copia $latest.jpg fallito ($(upload_reason))"
 			result="ok, ma copia $latest.jpg non caricata"
 		fi
 	fi
