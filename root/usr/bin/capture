@@ -97,7 +97,7 @@ JSON
 	mv "$CAPTURE_JSON.tmp" "$CAPTURE_JSON"
 }
 
-# Ping al servizio di monitoraggio (healthchecks.io), in background per non
+# Ping al servizio di monitoraggio (Uptime Kuma o healthchecks.io), in background per non
 # ritardare lo scatto. Gli scatti di prova senza upload non contano.
 ping_monitor() {
 	[ "$NO_UPLOAD" = 1 ] && return

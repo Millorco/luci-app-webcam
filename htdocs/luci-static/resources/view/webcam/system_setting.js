@@ -62,12 +62,12 @@ return view.extend({
 		o.depends('heating', '1');
 				
 		s = m.section(form.TypedSection, 'general', _('Monitoring'),
-			_('Ping a <a href="https://healthchecks.io" target="_blank">healthchecks.io</a> check (or a self-hosted Healthchecks) after every uploaded photo, so you get an alert when the webcam stops. Errors, service start (with uptime, to spot reboots) and maintenance mode are written to the check log. To send the router log to a central server use System &gt; System &gt; Logging.'));
+			_('After every uploaded photo the router pings a monitor, so you get an alert when the webcam stops: a Push monitor of <a href="https://github.com/louislam/uptime-kuma" target="_blank">Uptime Kuma</a>, or a <a href="https://healthchecks.io" target="_blank">healthchecks.io</a> check. Errors set the monitor down at once, with the message. With Healthchecks, service start (with uptime, to spot reboots) and maintenance mode are also written to the check log. To send the router log to a central server use System &gt; System &gt; Logging.'));
 		s.anonymous = true;
 
 		o = s.option(form.Value, 'ping_url', _('Ping URL'),
-			_('Leave empty to disable. Set the check period to the photo interval and the grace time to at least twice that.'));
-		o.placeholder = 'https://hc-ping.com/your-uuid';
+			_('Uptime Kuma: the Push URL of this webcam\'s monitor (<code>https://…/api/push/TOKEN</code>, the <code>?status=…</code> part is added by the router); set the heartbeat interval to at least twice the photo interval. Healthchecks: the ping URL; period equal to the photo interval, grace time at least twice that. Leave empty to disable.'));
+		o.placeholder = 'https://monitoring.example.com/api/push/TOKEN';
 		o.validate = function(section_id, value) {
 			if (value === '' || /^https?:\/\/[^\s"'`$\\]+$/.test(value))
 				return true;

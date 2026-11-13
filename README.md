@@ -9,7 +9,7 @@ App LuCI per OpenWrt che trasforma un piccolo router (testata su **GL.iNet GL-MT
   - legge un sensore **SHT31/SHT35** e accende il riscaldamento per evitare condensa e brina sul vetro del case;
   - fa da **watchdog**: se il router smette di rispondere, toglie e ridà corrente a router e fotocamera.
 - Se la fotocamera si blocca, la riavvia da sola tramite il relè.
-- Avvisa tramite [healthchecks.io](https://healthchecks.io) quando una webcam smette di caricare foto, e può mandare i log di tutti i router a un unico server (vedi [webcam-logserver](https://github.com/Millorco/webcam-logserver)).
+- Avvisa tramite [Uptime Kuma](https://github.com/louislam/uptime-kuma) (o [healthchecks.io](https://healthchecks.io)) quando una webcam smette di caricare foto, e può mandare i log di tutti i router a un unico server (vedi [webcam-logserver](https://github.com/Millorco/webcam-logserver)).
 
 ![Status](screenshot/status.png)
 
@@ -94,7 +94,7 @@ Funzionano anche in modalità manutenzione. Dopo lo scatto la pagina mostra l'an
 - **Wait for NTP**: minuti massimi di attesa della sincronizzazione dell'ora dopo un riavvio (predefinito 30, 0 = senza limite). Vedi [Ora dopo un riavvio](#ora-dopo-un-riavvio).
 - **Temperature scale**: °C o °F nella pagina Status.
 - **Anti-fog Heating**: abilita il controllo automatico e ne imposta le soglie (margine dal punto di rugiada, temperatura minima, isteresi, ventola insieme al riscaldamento).
-- **Monitoring**: URL di ping di [healthchecks.io](https://healthchecks.io) e indirizzo dell'inventario delle webcam, vedi [Monitoraggio e log centralizzati](#monitoraggio-e-log-centralizzati).
+- **Monitoring**: URL Push di Uptime Kuma (o ping URL di healthchecks.io) e indirizzo dell'inventario delle webcam, vedi [Monitoraggio e log centralizzati](#monitoraggio-e-log-centralizzati).
 - **Check for updates** / **Update info URL**: attiva il controllo degli aggiornamenti della pagina Status e indica da dove leggere le ultime versioni. Vuoto = `latest.json` su GitHub. Con il repository privato il router non può leggerlo, quindi metti una copia del file su un server raggiungibile (per esempio il proprio sito) e scrivi qui il suo indirizzo.
 - **Serial Port**: `/dev/ttyS1` a 9600 baud per la scheda.
 
@@ -137,7 +137,7 @@ Archivio e file aggiuntivi (alla prima installazione sono tutti attivi, con la c
   "settings": { "iso": "100", "aperture": null, "shutterspeed": null },
   "day_start": 1794028774,
   "day_end": 1794068884,
-  "app_version": "1.0-rc4",
+  "app_version": "1.0-rc5",
   "climate": { "time": 1794058200, "sensor_ok": true, "temperature": 12.3, "humidity": 80,
                "dewpoint": 9.0, "heating_enabled": true, "heater": false, "board_fw": "2.2" }
 }
@@ -154,7 +154,7 @@ Coda offline:
 
 Il GL-MT300N-V2 non ha un orologio a batteria: dopo ogni riavvio, compresi i cicli del watchdog e i blackout, l'ora riparte da quella dell'ultimo file salvato in flash. Per non caricare foto con data vecchia, che finirebbero nella cartella sbagliata e potrebbero sovrascrivere sul server una foto con lo stesso nome, all'avvio `capture_service` non scatta finché `sysntpd` non ha sincronizzato l'ora. Lo segnala `/etc/hotplug.d/ntp/25-webcam`, che crea `/var/run/webcam_ntp_synced`.
 
-- Se dopo *Wait for NTP* minuti l'ora non è ancora sincronizzata, scatta comunque, lo scrive nel log e nel registro del check di healthchecks.io.
+- Se dopo *Wait for NTP* minuti l'ora non è ancora sincronizzata, scatta comunque, lo scrive nel log (e nel registro del check, se usi healthchecks.io).
 - Se l'anno è precedente al 2025 l'ora è sicuramente sbagliata: non scatta finché non arriva NTP, e anche "Take photo now" rifiuta l'upload (lo scatto di prova funziona).
 - Se il client NTP è disattivato in *Sistema → Sistema → Sincronizzazione dell'ora*, non aspetta. Lascialo attivo.
 
@@ -223,9 +223,10 @@ Poi registra con timestamp ogni comando ricevuto e ogni cambio dei relè, e ogni
 
 ## Monitoraggio e log centralizzati
 
-- **Avvisi**: crea un check su [healthchecks.io](https://healthchecks.io) per ogni webcam, con *Period* uguale all'intervallo di scatto e *Grace time* almeno doppio, e copia il ping URL in **System → Monitoring**. Il router fa un ping dopo ogni foto caricata e un ping `/fail` con il messaggio a ogni errore. Scrive nel registro del check anche gli avvii del servizio (con l'uptime, per vedere i riavvii) e la modalità manutenzione. Se il router si spegne, l'allarme arriva alla fine del grace time.
+- **Avvisi con Uptime Kuma**: per ogni webcam crea un monitor di tipo **Push**, con *Heartbeat Interval* almeno doppio dell'intervallo di scatto (per esempio 600 s con uno scatto ogni 5 minuti), e copia il *Push URL* in **System → Monitoring** (anche con `?status=up&msg=OK&ping=` in fondo: i parametri li mette il router). Il router manda `status=up` dopo ogni foto caricata e `status=down` con il messaggio a ogni errore, quindi l'allarme arriva subito. Se il router si spegne o perde la rete, l'allarme arriva quando scade l'intervallo. Durante la manutenzione il router non scatta: metti in pausa il monitor, altrimenti va in allarme.
+- **Avvisi con healthchecks.io**: in alternativa, crea un check con *Period* uguale all'intervallo di scatto e *Grace time* almeno doppio e copia il ping URL. Il router fa un ping dopo ogni foto caricata e un ping `/fail` a ogni errore, e scrive nel registro del check anche gli avvii del servizio (con l'uptime, per vedere i riavvii) e la modalità manutenzione. Il router riconosce da solo il tipo di URL (`/api/push/` è Uptime Kuma).
 - **Inventario**: con **Inventory URL** e **Inventory token** in **System → Monitoring** il router manda ogni 6 ore e all'avvio i suoi dati tecnici (modello, versioni di OpenWrt, dell'app e del firmware della scheda, fotocamera, IP nella VPN, spazio libero, ultimo scatto) all'inventario delle webcam e dei clienti in Dolibarr, con il modulo [dolibarr-webcams](https://github.com/Millorco/dolibarr-webcams): come URL `https://tuo-dolibarr/api/index.php/webcams/report`, come token la chiave API dell'utente dei router. `inventory_report --print` mostra cosa viene inviato, `inventory_report` lo invia subito.
-- **Log**: OpenWrt può mandare il suo log a un server syslog (**System → System → Logging**). Il server con VictoriaLogs (Docker), con o senza VPN, è nel repository [webcam-logserver](https://github.com/Millorco/webcam-logserver). La VPN WireGuard a stella (wg-easy) è in [webcam-vpn](https://github.com/Millorco/webcam-vpn): i router si collegano al VPS, tu ti colleghi dal PC e apri LuCI e SSH di ogni router, anche in 4G. Sul router basta `central_log setup <nome>.conf` con il file scaricato da wg-easy, che crea il tunnel, apre dal tunnel solo SSH, LuCI e ping e manda lì il log (che VictoriaLogs riceve con la variante `wireguard/` di webcam-logserver).
+- **Log**: OpenWrt può mandare il suo log a un server syslog (**System → System → Logging**). Il server con VictoriaLogs (Docker), con o senza VPN, è nel repository [webcam-logserver](https://github.com/Millorco/webcam-logserver). La VPN WireGuard a stella (wg-easy) è in [webcam-vpn](https://github.com/Millorco/webcam-vpn): i router si collegano al VPS, tu ti colleghi dal PC e apri LuCI e SSH di ogni router, anche in 4G. Sul router basta `central_log setup <nome>.conf` con il file scaricato da wg-easy, che crea il tunnel, apre dal tunnel solo SSH, LuCI e ping e può mandare lì il log.
 
 ## Risoluzione dei problemi
 
@@ -282,7 +283,7 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
     ├── usr/libexec/webcam/
     │   ├── serial                             accesso seriale con lock
     │   ├── schedule                           fasce orarie speciali
-    │   ├── hc_ping                            ping a healthchecks.io
+    │   ├── hc_ping                            ping a Uptime Kuma o healthchecks.io
     │   └── sun_times                          calcolo locale di alba e tramonto
     └── usr/share/
         ├── luci/menu.d/luci-app-webcam.json   menu
