@@ -75,7 +75,7 @@ Mostra la versione dell'app e del firmware della scheda (letta con il comando `v
 
 Accanto alle versioni dell'app e del firmware compare *version X available* se ne esiste una più recente, con il link alla release o al firmware. La riga **Update check** dice quando è stato fatto l'ultimo controllo e ha il pulsante **Check now**. Il controllo (`check_updates`) scarica [`latest.json`](latest.json) solo con la pagina Status aperta, al massimo ogni 12 ore (ogni ora dopo un errore), in background e con un timeout di 20 secondi. Senza internet la pagina resta com'è e mostra l'ultimo risultato riuscito. Il firmware della scheda va comunque aggiornato a mano dall'FTDI.
 
-A ogni nuova release aggiorna `app` e `app_url` in `latest.json` (e `fw`, `fw_url` quando cambia `FW_VERSION` in `board.ino`), e la sua copia se usi un *Update info URL*.
+A ogni nuova release aggiorna `app` e `app_url` in `latest.json` (e `fw`, `fw_url` quando cambia `FW_VERSION` in `board.ino`), e la sua copia se usi un *Update info URL*. Quando pubblichi la release, la action `.github/workflows/release.yml` controlla che il tag corrisponda a `root/usr/share/webcam/version` e allega da sola l'archivio `luci-app-webcam-<versione>.tar.gz`.
 
 Sotto la tabella ci sono tre pulsanti:
 
@@ -137,7 +137,7 @@ Archivio e file aggiuntivi (alla prima installazione sono tutti attivi, con la c
   "settings": { "iso": "100", "aperture": null, "shutterspeed": null },
   "day_start": 1794028774,
   "day_end": 1794068884,
-  "app_version": "1.0-rc3",
+  "app_version": "1.0-rc4",
   "climate": { "time": 1794058200, "sensor_ok": true, "temperature": 12.3, "humidity": 80,
                "dewpoint": 9.0, "heating_enabled": true, "heater": false, "board_fw": "2.2" }
 }
@@ -252,6 +252,7 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
 ```
 .
 ├── board.ino                                  firmware della scheda
+├── .github/workflows/release.yml              archivio allegato a ogni release
 ├── install.sh                                 installazione da release GitHub
 ├── latest.json                                ultime versioni di app e firmware (pagina Status)
 ├── htdocs/luci-static/resources
