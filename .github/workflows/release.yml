@@ -1,0 +1,41 @@
+# Quando pubblichi una release su GitHub:
+# - controlla che il tag sia uguale a root/usr/share/webcam/version
+#   (se il tag punta a un commit vecchio, la action fallisce e lo vedi subito);
+# - allega luci-app-webcam-<versione>.tar.gz, da estrarre in / sul router.
+#   L'archivio non contiene /etc/config/webcam né gli elenchi della
+#   fotocamera, quindi chi aggiorna mantiene le proprie impostazioni.
+name: Archivio della release
+on:
+  release:
+    types: [published]
+permissions:
+  contents: write
+jobs:
+  tar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Controllo versione
+        run: |
+          V="$(cat root/usr/share/webcam/version)"
+          T="${{ github.event.release.tag_name }}"
+          if [ "$V" != "$T" ]; then
+            echo "::error::Il tag $T punta a un commit con versione $V: sposta il tag sull'ultimo commit di main"
+            exit 1
+          fi
+      - name: Archivio
+        run: |
+          V="$(cat root/usr/share/webcam/version)"
+          mkdir -p pkg/www
+          cp -a root/. pkg/
+          cp -a htdocs/. pkg/www/
+          rm -rf pkg/etc/config
+          rm -f pkg/www/luci-static/resources/webcam/aperture_data.json \
+                pkg/www/luci-static/resources/webcam/iso_data.json \
+                pkg/www/luci-static/resources/webcam/shutterspeed_data.json
+          tar -C pkg --owner=0 --group=0 -czf "luci-app-webcam-$V.tar.gz" .
+          tar -tzf "luci-app-webcam-$V.tar.gz"
+      - name: Allega alla release
+        run: gh release upload "${{ github.event.release.tag_name }}" luci-app-webcam-*.tar.gz --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}

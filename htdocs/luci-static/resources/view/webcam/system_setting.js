@@ -75,7 +75,7 @@ return view.extend({
 		};
 
 		o = s.option(form.Value, 'inventory_url', _('Inventory URL'),
-			_('Address where the router sends its technical data (model, versions, camera, VPN address, free space, last photo) every 6 hours and at boot: <code>https://your-dolibarr/api/index.php/webcams/report</code> for the Dolibarr Webcam module, or <code>report.php</code> of the webcam-inventario PHP app. Leave empty to disable.'));
+			_('Address where the router sends its technical data (model, versions, camera, VPN address, free space, last photo) every 6 hours and at boot: <code>https://your-dolibarr/api/index.php/webcams/report</code> (Dolibarr with the Webcam module). Leave empty to disable.'));
 		o.placeholder = 'https://crm.example.com/api/index.php/webcams/report';
 		o.validate = function(section_id, value) {
 			if (value === '' || /^https?:\/\/[^\s"'`$\\]+$/.test(value))
@@ -84,7 +84,7 @@ return view.extend({
 		};
 
 		o = s.option(form.Value, 'inventory_token', _('Inventory token'),
-			_('Dolibarr: API key of the user for the routers (only Webcam permissions). PHP app: <code>report_token</code> of config.php.'));
+			_('API key of the Dolibarr user for the routers (only Webcam permissions).'));
 		o.password = true;
 		o.validate = function(section_id, value) {
 			if (value === '' || /^[A-Za-z0-9._~+\/=-]+$/.test(value))
