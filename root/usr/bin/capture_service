@@ -5,8 +5,19 @@ LOGTAG="${WC_NAME:-webcam} capture"
 SCHEDULE=/usr/libexec/webcam/schedule
 PING=/usr/libexec/webcam/hc_ping
 
+# Livello syslog dal prefisso del messaggio, così in VictoriaLogs gli
+# errori sono rossi, gli avvisi gialli e le foto caricate verdi.
+log_prio() {
+    case "$1" in
+        ERRORE*) echo user.err ;;
+        ATTENZIONE*) echo user.warning ;;
+        OK*) echo user.info ;;
+        *) echo user.notice ;;
+    esac
+}
+
 log() {
-    logger -t "$LOGTAG" "$@"
+    logger -p "$(log_prio "$*")" -t "$LOGTAG" "$@"
 }
 
 LAST_SPECIAL=""

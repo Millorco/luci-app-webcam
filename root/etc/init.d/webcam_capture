@@ -23,6 +23,13 @@ ensure_cron() {
         fi
     done
 
+    # crond di BusyBox scrive ogni job eseguito ("USER root pid ... cmd
+    # /usr/bin/heartbeat") a livello err: con 9 registra solo i suoi errori
+    if [ "$(uci -q get system.@system[0].cronloglevel)" != 9 ]; then
+        uci -q set system.@system[0].cronloglevel=9 && uci -q commit system
+        changed=1
+    fi
+
     [ "$changed" = 1 ] && /etc/init.d/cron restart >/dev/null 2>&1
 }
 

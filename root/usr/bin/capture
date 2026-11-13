@@ -63,9 +63,20 @@ SPECIAL="${WC_SPECIAL:-}"
 
 # Sul terminale solo se lanciato a mano: sotto procd lo stderr finirebbe
 # nel syslog come "sh" a livello err, doppione della riga di logger.
+# Livello syslog dal prefisso del messaggio, così in VictoriaLogs gli
+# errori sono rossi, gli avvisi gialli e le foto caricate verdi.
+log_prio() {
+	case "$1" in
+		ERRORE*) echo user.err ;;
+		ATTENZIONE*) echo user.warning ;;
+		OK*) echo user.info ;;
+		*) echo user.notice ;;
+	esac
+}
+
 log() {
 	[ -t 2 ] && echo "$@" >&2
-	logger -t "$WC_NAME capture" "$@"
+	logger -p "$(log_prio "$*")" -t "$WC_NAME capture" "$@"
 }
 
 # Stringa JSON con escape di \ e " (null se vuota). Gli a capo e le
@@ -485,7 +496,7 @@ queue_drain() {
 		fi
 	done < "$WORK_DIR/queue.lst"
 	rm -f "$WORK_DIR/queue.lst"
-	[ "$sent" -gt 0 ] && log "Caricate $sent foto rimaste in coda, ne restano $(queue_count)."
+	[ "$sent" -gt 0 ] && log "OK caricate $sent foto rimaste in coda, ne restano $(queue_count)."
 	return 0
 }
 
@@ -525,7 +536,7 @@ upload() {
 	fi
 	queue_enabled && queue_remove "$QUEUE_DIR/$archive$FILENAME"
 
-	log "Upload completato: $archive$FILENAME ($MODE${SPECIAL:+, $SPECIAL}, $WC_UPLOAD_PROTOCOL)"
+	log "OK foto caricata: $archive$FILENAME ($MODE${SPECIAL:+, $SPECIAL}, $WC_UPLOAD_PROTOCOL)"
 
 	# Copia dell'ultima foto con nome fisso, per pagine web e incorporamenti
 	if [ "$WC_UPLOAD_LATEST" = 1 ]; then
