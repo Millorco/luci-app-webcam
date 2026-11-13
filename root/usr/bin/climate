@@ -21,7 +21,12 @@ STATUS_JSON="$WC_STATE_DIR/status.json"
 
 mkdir -p "$WC_STATE_DIR"
 
-log() { logger -t "$WC_NAME climate" "$@"; }
+log() {
+	case "$1" in
+		ERRORE*) logger -p user.err -t "$WC_NAME climate" "$@" ;;
+		*) logger -t "$WC_NAME climate" "$@" ;;
+	esac
+}
 
 HEATER="$(cat "$STATE_FILE" 2>/dev/null)"
 [ "$HEATER" = 1 ] || HEATER=0
@@ -48,7 +53,7 @@ SENSOR_OK=1
 DEWPOINT=""
 if [ -z "$TEMP" ] || [ -z "$HUM" ]; then
 	SENSOR_OK=0
-	log "Lettura del sensore fallita: riscaldamento lasciato invariato."
+	log "ERRORE: sensore di temperatura e umidità non risponde (SHT31 o scheda scollegati?): riscaldamento lasciato invariato."
 else
 	# Formula di Magnus
 	DEWPOINT=$(awk -v t="$TEMP" -v h="$HUM" 'BEGIN {

@@ -33,7 +33,7 @@ URL="$(uci -q get webcam.@general[0].ping_url)"
 
 case "$URL" in
 	http://*|https://*) ;;
-	*) logger -t "webcam ping" "ping_url non valido: deve iniziare con http:// o https://"; exit 1 ;;
+	*) logger -p user.err -t "webcam ping" "ERRORE: ping_url non valido: deve iniziare con http:// o https://"; exit 1 ;;
 esac
 
 case "$URL" in
@@ -64,5 +64,5 @@ while :; do
 	sleep 10
 done
 
-logger -t "webcam ping" "Ping '$KIND' non riuscito dopo $TRIES tentativi"
+logger -p user.warning -t "webcam ping" "ATTENZIONE: ping '$KIND' al monitoraggio non riuscito dopo $TRIES tentativi"
 exit 1
