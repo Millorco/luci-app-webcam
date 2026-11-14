@@ -1,36 +1,54 @@
 #!/bin/sh
+# ---------------------------------------------------
+# Spegne tutti i LED del router, così non si riflettono nella foto.
+#
+# Per ogni LED in /sys/class/leds imposta in /etc/config/system
+# trigger 'none' e default '0': le sezioni LED già presenti vengono
+# modificate, per gli altri LED ne viene creata una (webcam_led_*).
+# I LED si spengono subito e restano spenti dopo il riavvio.
+# Si può eseguire più volte: il risultato è sempre lo stesso.
+#
+# Viene eseguito all'installazione (/etc/uci-defaults/90-webcam-leds).
+# Per tenere i LED accesi: uci set webcam.general.leds_off=0
+# ---------------------------------------------------
 
-# Script per settare configurazione LED a OpenWrt
-
-# Verifica se la configurazione LED Power esiste già
-if uci -q get system.led_power > /dev/null 2>&1; then
-    echo "La configurazione LED 'led_power' esiste già"
-    exit 0
+if [ "$(uci -q get webcam.general.leds_off)" = 0 ]; then
+	echo "LED lasciati accesi (webcam.general.leds_off=0)"
+	exit 0
 fi
 
-# Aggiunge la configurazione LED Power
-uci set system.led_power=led
-uci set system.led_power.name='power'
-uci set system.led_power.sysfs='green:power'
-uci set system.led_power.trigger='none'
-uci set system.led_power.default='0'
+[ -d /sys/class/leds ] || { echo "Nessun LED trovato"; exit 0; }
 
+# LED già descritti in /etc/config/system
+covered=""
+for s in $(uci -q show system | sed -n 's/^system\.\([^.=]*\)=led$/\1/p'); do
+	uci set "system.$s.trigger=none"
+	uci set "system.$s.default=0"
+	covered="$covered
+$(uci -q get "system.$s.sysfs")"
+done
 
-# Modifica la configurazione LED WiFi
-uci set system.led_wifi_led.trigger='none'
-uci set system.led_wifi_led.default='0'
+n=0
+for d in /sys/class/leds/*; do
+	[ -e "$d" ] || continue
+	led="${d##*/}"
+	n=$((n + 1))
 
+	if ! printf '%s\n' "$covered" | grep -qxF "$led"; then
+		s="webcam_led_$(printf '%s' "$led" | tr -c 'A-Za-z0-9_' '_')"
+		uci set "system.$s=led"
+		uci set "system.$s.name=$led"
+		uci set "system.$s.sysfs=$led"
+		uci set "system.$s.trigger=none"
+		uci set "system.$s.default=0"
+	fi
 
-# Modifica la configurazione LED WAN
-uci set system.led_wan.trigger='none'
-uci set system.led_wan.default='0'
+	# Spegnimento immediato
+	echo none > "$d/trigger" 2>/dev/null
+	echo 0 > "$d/brightness" 2>/dev/null
+done
 
-# Salva le modifiche
-uci commit system
+[ -n "$(uci -q changes system)" ] && uci commit system
 
-echo "Configurazione LED aggiunta con successo"
-
-# Riavvia il servizio LED per applicare le modifiche
-/etc/init.d/led restart
-
-echo "Servizio LED riavviato"
+echo "LED spenti: $n"
+exit 0
