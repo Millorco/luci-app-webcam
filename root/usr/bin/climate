@@ -2,11 +2,15 @@
 # ---------------------------------------------------
 # Anti-appannamento / anti-brina del vetro del case.
 #
-# Legge temperatura e umidità dall'SHT31, calcola il punto di rugiada e
+# Legge temperatura e umidità dall'SHT31 interno, calcola il punto di rugiada e
 # accende il riscaldamento (e la ventola) quando:
 #   - la temperatura è a meno di DEWPOINT_MARGIN °C dal punto di rugiada, oppure
 #   - la temperatura è sotto MIN_TEMP °C (rischio brina).
 # Lo spegne quando entrambe le condizioni sono rientrate di HYSTERESIS °C.
+#
+# Se è installato anche il sensore esterno (ext_sensor = 1, indirizzo 0x45)
+# ne legge i valori e li aggiunge allo stato; il riscaldamento resta
+# comandato solo dal sensore interno.
 #
 # Scrive lo stato in /tmp/webcam/status.json (pagina Status di LuCI).
 # Eseguito da cron ogni 5 minuti.
@@ -49,18 +53,40 @@ BOARD_FW="$($SERIAL query v 2>/dev/null | sed -n 's/.*fw[[:space:]]*\([0-9][0-9A
 TEMP="$($SERIAL query t 2>/dev/null)"
 HUM="$($SERIAL query u 2>/dev/null)"
 
+# Punto di rugiada con la formula di Magnus
+dewpoint() {
+	awk -v t="$1" -v h="$2" 'BEGIN {
+		if (h < 1) h = 1
+		g = log(h / 100) + 17.62 * t / (243.12 + t)
+		printf "%.1f", 243.12 * g / (17.62 - g)
+	}'
+}
+
 SENSOR_OK=1
 DEWPOINT=""
 if [ -z "$TEMP" ] || [ -z "$HUM" ]; then
 	SENSOR_OK=0
-	log "ERRORE: sensore di temperatura e umidità non risponde (SHT31 o scheda scollegati?): riscaldamento lasciato invariato."
+	log "ERRORE: sensore interno di temperatura e umidità non risponde (SHT31 a 0x44 o scheda scollegati?): riscaldamento lasciato invariato."
 else
-	# Formula di Magnus
-	DEWPOINT=$(awk -v t="$TEMP" -v h="$HUM" 'BEGIN {
-		if (h < 1) h = 1
-		g = log(h / 100) + 17.62 * t / (243.12 + t)
-		printf "%.1f", 243.12 * g / (17.62 - g)
-	}')
+	DEWPOINT=$(dewpoint "$TEMP" "$HUM")
+fi
+
+# Sensore esterno (facoltativo)
+EXT_OK=0
+TEMP_EXT=""
+HUM_EXT=""
+DEWPOINT_EXT=""
+if [ "$WC_EXT_SENSOR" = 1 ]; then
+	TEMP_EXT="$($SERIAL query T 2>/dev/null)"
+	HUM_EXT="$($SERIAL query U 2>/dev/null)"
+	if [ -z "$TEMP_EXT" ] || [ -z "$HUM_EXT" ]; then
+		TEMP_EXT=""
+		HUM_EXT=""
+		log "ERRORE: sensore esterno di temperatura e umidità non risponde (SHT31 a 0x45 scollegato o firmware della scheda precedente alla 2.3?)."
+	else
+		EXT_OK=1
+		DEWPOINT_EXT=$(dewpoint "$TEMP_EXT" "$HUM_EXT")
+	fi
 fi
 
 DECISION="$HEATER"
@@ -88,7 +114,7 @@ else
 	PREV="$HEATER"
 	set_heater "$DECISION"
 	[ "$DECISION" != "$PREV" ] && \
-		log "Riscaldamento $( [ "$DECISION" = 1 ] && echo ACCESO || echo SPENTO ) (T=${TEMP} RH=${HUM} Td=${DEWPOINT})"
+		log "Riscaldamento $( [ "$DECISION" = 1 ] && echo ACCESO || echo SPENTO ) (T=${TEMP} RH=${HUM} Td=${DEWPOINT}$( [ "$EXT_OK" = 1 ] && echo " esterno: T=${TEMP_EXT} RH=${HUM_EXT} Td=${DEWPOINT_EXT}"))"
 fi
 
 num() { [ -n "$1" ] && echo "$1" || echo null; }
@@ -100,6 +126,11 @@ cat > "$STATUS_JSON.tmp" <<JSON
   "temperature": $(num "$TEMP"),
   "humidity": $(num "$HUM"),
   "dewpoint": $(num "$DEWPOINT"),
+  "ext_sensor": $( [ "$WC_EXT_SENSOR" = 1 ] && echo true || echo false ),
+  "ext_sensor_ok": $( [ "$EXT_OK" = 1 ] && echo true || echo false ),
+  "temperature_ext": $(num "$TEMP_EXT"),
+  "humidity_ext": $(num "$HUM_EXT"),
+  "dewpoint_ext": $(num "$DEWPOINT_EXT"),
   "heating_enabled": $( [ "$WC_HEATING" = 1 ] && echo true || echo false ),
   "heater": $( [ "$HEATER" = 1 ] && echo true || echo false ),
   "board_fw": $( [ -n "$BOARD_FW" ] && echo "\"$BOARD_FW\"" || echo null )

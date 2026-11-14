@@ -1,8 +1,23 @@
 #!/bin/sh
-# Legge temperatura (°C) e umidità (%) dal sensore SHT31 tramite la scheda.
+# Legge temperatura (°C) e umidità (%) dai sensori SHT31 tramite la scheda:
+# quello interno al case e, se c'è, quello esterno.
 
-TEMP=$(/usr/libexec/webcam/serial query t) || exit 1
-HUM=$(/usr/libexec/webcam/serial query u) || exit 1
+. /usr/bin/webcam.cfg
 
-echo "Temperatura: $TEMP °C"
-echo "Umidità: $HUM %"
+SERIAL=/usr/libexec/webcam/serial
+
+TEMP=$($SERIAL query t) || exit 1
+HUM=$($SERIAL query u) || exit 1
+
+echo "Temperatura interna: $TEMP °C"
+echo "Umidità interna: $HUM %"
+
+if [ "$WC_EXT_SENSOR" = 1 ]; then
+	if TEMP_EXT=$($SERIAL query T 2>/dev/null) && HUM_EXT=$($SERIAL query U 2>/dev/null); then
+		echo "Temperatura esterna: $TEMP_EXT °C"
+		echo "Umidità esterna: $HUM_EXT %"
+	else
+		echo "Sensore esterno: non risponde"
+		exit 1
+	fi
+fi

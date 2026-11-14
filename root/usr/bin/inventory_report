@@ -131,6 +131,8 @@ case "$T" in ''|*[!0-9]*) T=0 ;; esac
 if [ $(( $(date +%s) - T )) -lt 900 ]; then
 	add_num temperature "$(json_get "$STATUS" @.temperature)"
 	add_num humidity "$(json_get "$STATUS" @.humidity)"
+	add_num temperature_ext "$(json_get "$STATUS" @.temperature_ext)"
+	add_num humidity_ext "$(json_get "$STATUS" @.humidity_ext)"
 fi
 add_int last_capture_time "$(json_get "$CAPTURE" @.time)"
 add_str last_capture_file "$(json_get "$CAPTURE" @.file)"

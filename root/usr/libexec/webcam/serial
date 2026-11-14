@@ -4,7 +4,7 @@
 #
 # Uso:
 #   serial send  <comando>   invia un comando (es. b, C, c, H, h, F, f)
-#   serial query <comando>   invia un comando e stampa la risposta (es. t, u, d)
+#   serial query <comando>   invia un comando e stampa la risposta (es. t, u, T, U, d)
 #
 # Il firmware legge i comandi con readString(), che attende 1 secondo
 # dopo l'ultimo carattere ricevuto: due comandi ravvicinati verrebbero
@@ -89,7 +89,7 @@ case "$ACTION" in
 		RESPONSE=$(tr -d '\r' < "$TMP" | tr '\n' ' ')
 		rm -f "$TMP"
 		case "$CMD" in
-			t|u)
+			t|u|T|U)
 				# Il firmware risponde con un numero con un decimale (es. 21.4)
 				VALUE=$(echo "$RESPONSE" | grep -oE -- '-?[0-9]+\.[0-9]+' | tail -n 1)
 				[ -n "$VALUE" ] || { echo "Errore: nessuna risposta valida a '$CMD'" >&2; exit 1; }

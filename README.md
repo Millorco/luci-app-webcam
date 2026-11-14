@@ -6,7 +6,7 @@ App LuCI per OpenWrt che trasforma un piccolo router (testata su **GL.iNet GL-MT
 - Carica ogni foto su un server **FTP**, **FTPS** o **SFTP**.
 - Insieme a una scheda dedicata (ATmega328P) collegata in seriale:
   - comanda i relè di fotocamera, router, riscaldamento e ventola;
-  - legge un sensore **SHT31/SHT35** e accende il riscaldamento per evitare condensa e brina sul vetro del case;
+  - legge un sensore **SHT31/SHT35** dentro il case (e, se c'è, un secondo SHT31 fuori) e accende il riscaldamento per evitare condensa e brina sul vetro del case;
   - fa da **watchdog**: se il router smette di rispondere, toglie e ridà corrente a router e fotocamera.
 - Se la fotocamera si blocca, la riavvia da sola tramite il relè.
 - Avvisa tramite [Uptime Kuma](https://github.com/louislam/uptime-kuma) (o [healthchecks.io](https://healthchecks.io)) quando una webcam smette di caricare foto, e può mandare i log di tutti i router a un unico server (vedi [webcam-logserver](https://github.com/Millorco/webcam-logserver)).
@@ -31,14 +31,14 @@ App LuCI per OpenWrt che trasforma un piccolo router (testata su **GL.iNet GL-MT
 | Router OpenWrt | GL.iNet GL-MT300N-V2 (MT7628). Usa la seconda UART (`/dev/ttyS1`, pad TX1/RX1) per la scheda. |
 | Fotocamera | Canon EOS 2000D / 1500D (altre EOS supportate da gPhoto2 dovrebbero funzionare). |
 | Scheda "Webcam Board 1.0" | ATmega328P a 16 MHz, 3 relè (fotocamera, router, riscaldamento), uscita ventola, traslatori di livello 5 V ↔ 3,3 V verso il router, convertitori per 5 V e alimentazione fotocamera. |
-| Sensore | SHT31 o SHT35 su I2C (indirizzo 0x44 o 0x45). |
+| Sensori | SHT31 o SHT35 interno su I2C all'indirizzo **0x44** (pin ADDR a GND). Facoltativo: un secondo SHT31 per esterno (es. DFRobot SEN0385) all'indirizzo **0x45** (ADDR a VCC), sullo stesso bus. Il riscaldamento e le sue protezioni usano solo il sensore interno. |
 
 Collegamenti principali:
 
 | Connettore scheda | Pin | Collegamento |
 |---|---|---|
 | **TX1** (verso il router) | 1 VCC · 2 RX1OUT · 3 TX1OUT | VCC = 3,3 V del router · RX1OUT → TX1 del router · TX1OUT → RX1 del router. La massa arriva dall'alimentazione. |
-| **TEMP** (sensore) | 1 5V · 2 GND · 3 SCL · 4 SDA | Attenzione ai moduli **Grove**, che hanno un ordine diverso (SCL, SDA, VCC, GND): serve un cavo rimappato. |
+| **TEMP** (sensori) | 1 5V · 2 GND · 3 SCL · 4 SDA | Attenzione ai moduli **Grove**, che hanno un ordine diverso (SCL, SDA, VCC, GND): serve un cavo rimappato. Con due sensori i 4 fili vanno in parallelo (sdoppiatore o morsettiera). |
 | **FTDI** (debug e programmazione) | 1 GND · 2 TX · 3 RX · 4 5V · 5 DTR | TX → RXD dell'adattatore, RX → TXD dell'adattatore. |
 
 ## Installazione
@@ -72,7 +72,7 @@ Le pagine sono in **Servizi → Webcam**. La configurazione è salvata in `/etc/
 
 ### Status
 
-Mostra la versione dell'app e del firmware della scheda (letta con il comando `v`), temperatura, umidità, punto di rugiada, stato del riscaldamento, ultimo scatto (giorno/notte) ed esito dell'upload. Si aggiorna ogni 30 secondi; i dati della scheda ogni 5 minuti.
+Mostra la versione dell'app e del firmware della scheda (letta con il comando `v`), temperatura, umidità e punto di rugiada interni (ed esterni, se c'è il secondo sensore), stato del riscaldamento, ultimo scatto (giorno/notte) ed esito dell'upload. Si aggiorna ogni 30 secondi; i dati della scheda ogni 5 minuti.
 
 Accanto alle versioni dell'app e del firmware compare *version X available* se ne esiste una più recente, con il link alla release o al firmware. La riga **Update check** dice quando è stato fatto l'ultimo controllo e ha il pulsante **Check now**. Il controllo (`check_updates`) scarica [`latest.json`](latest.json) solo con la pagina Status aperta, al massimo ogni 12 ore (ogni ora dopo un errore), in background e con un timeout di 20 secondi. Senza internet la pagina resta com'è e mostra l'ultimo risultato riuscito. Il firmware della scheda va comunque aggiornato a mano dall'FTDI.
 
@@ -94,6 +94,7 @@ Funzionano anche in modalità manutenzione. Dopo lo scatto la pagina mostra l'an
 - **Latitudine / Longitudine**: servono per calcolare alba e tramonto.
 - **Wait for NTP**: minuti massimi di attesa della sincronizzazione dell'ora dopo un riavvio (predefinito 30, 0 = senza limite). Vedi [Ora dopo un riavvio](#ora-dopo-un-riavvio).
 - **Temperature scale**: °C o °F nella pagina Status.
+- **Outside sensor**: da attivare se c'è il secondo SHT31 fuori dal case (0x45, firmware 2.3 o successivo). I suoi valori vanno nella pagina Status, nel `.json` di ogni foto e nell'inventario.
 - **Anti-fog Heating**: abilita il controllo automatico e ne imposta le soglie (margine dal punto di rugiada, temperatura minima, isteresi, ventola insieme al riscaldamento).
 - **Monitoring**: URL Push di Uptime Kuma (o ping URL di healthchecks.io) e indirizzo dell'inventario delle webcam, vedi [Monitoraggio e log centralizzati](#monitoraggio-e-log-centralizzati).
 - **Check for updates** / **Update info URL**: attiva il controllo degli aggiornamenti della pagina Status e indica da dove leggere le ultime versioni. Vuoto = `latest.json` su GitHub. Con il repository privato il router non può leggerlo, quindi metti una copia del file su un server raggiungibile (per esempio il proprio sito) e scrivi qui il suo indirizzo.
@@ -140,7 +141,9 @@ Archivio e file aggiuntivi (alla prima installazione sono tutti attivi, con la c
   "day_end": 1794068884,
   "app_version": "1.0-rc5",
   "climate": { "time": 1794058200, "sensor_ok": true, "temperature": 12.3, "humidity": 80,
-               "dewpoint": 9.0, "heating_enabled": true, "heater": false, "board_fw": "2.2" }
+               "dewpoint": 9.0, "ext_sensor": true, "ext_sensor_ok": true, "temperature_ext": 4.1,
+               "humidity_ext": 95, "dewpoint_ext": 3.4, "heating_enabled": true, "heater": false,
+               "board_fw": "2.3" }
 }
 ```
 
@@ -169,14 +172,14 @@ Il GL-MT300N-V2 non ha un orologio a batteria: dopo ogni riavvio, compresi i cic
   4. se lo scatto fallisce, spegne e riaccende la fotocamera tramite la scheda e riprova una volta;
   5. mette la foto nella coda offline e la carica (in `AAAA/MM/GG/` se richiesto) con il suo `.json` dei dati, poi la copia `current.jpg` con nome temporaneo e rinomina;
   6. se l'upload è riuscito toglie la foto dalla coda e ritenta quelle arretrate, poi scrive l'esito e il numero di foto in coda in `/tmp/webcam/capture.json`.
-- **`climate`** (cron, ogni 5 minuti): legge T e RH, calcola il punto di rugiada (formula di Magnus) e accende riscaldamento e ventola se `T − Td` è sotto il margine o `T` è sotto la minima, con isteresi per lo spegnimento. Lo stato va in `/tmp/webcam/status.json`. Se il sensore non risponde, lo stato del riscaldamento resta invariato.
+- **`climate`** (cron, ogni 5 minuti): legge T e RH, calcola il punto di rugiada (formula di Magnus) e accende riscaldamento e ventola se `T − Td` è sotto il margine o `T` è sotto la minima, con isteresi per lo spegnimento. Lo stato va in `/tmp/webcam/status.json`. Se il sensore interno non risponde, lo stato del riscaldamento resta invariato. Con *Outside sensor* attivo legge anche il sensore esterno (comandi `T`/`U`) e ne calcola il punto di rugiada, solo come informazione.
 - **`heartbeat`** (cron, ogni 3 minuti): invia `b` alla scheda. Dopo 10 minuti senza heartbeat la scheda spegne e riaccende router e fotocamera.
 - **Livelli di log**: `capture` e `capture_service` scrivono le righe `ERRORE` a livello err, `ATTENZIONE` a warning, `OK foto caricata` e `OK caricate N foto rimaste in coda` a info, il resto a notice. Ogni `ERRORE` dice la causa: fotocamera non trovata su USB, scatto fallito (USB occupata, messa a fuoco, scheda di memoria, comunicazione), memoria del router piena, chiavetta della coda non montata, upload fallito (rete giù, DNS, credenziali, server spento, certificato, spazio o permessi sul server), sensore che non risponde, invio all'inventario non riuscito. Nel server dei log (VictoriaLogs) si filtrano con `level:error` o `level:info`.
 - **`/usr/libexec/webcam/serial`**: unico punto di accesso alla seriale, con lock e una pausa di 2 secondi tra un comando e l'altro.
 
 ## Scheda relè e sensore
 
-Firmware: [`board.ino`](board.ino) (versione 2.2).
+Firmware: [`board.ino`](board.ino) (versione 2.3).
 
 ### Protocollo
 
@@ -189,12 +192,14 @@ Firmware: [`board.ino`](board.ino) (versione 2.2).
 | `H` / `h` | riscaldamento ON / OFF | — |
 | `P` / `p` | router ON / OFF | — |
 | `F` / `f` | ventola ON / OFF | — |
-| `t` | temperatura | es. `21.4`, oppure `ERR` |
-| `u` | umidità | es. `55.0`, oppure `ERR` |
+| `t` | temperatura interna (0x44) | es. `21.4`, oppure `ERR` |
+| `u` | umidità interna (0x44) | es. `55.0`, oppure `ERR` |
+| `T` | temperatura esterna (0x45, dal fw 2.3) | es. `4.1`, oppure `ERR` |
+| `U` | umidità esterna (0x45, dal fw 2.3) | es. `95.0`, oppure `ERR` |
 | `d` | test connessione | `OK` |
 | `r` | ciclo di alimentazione di router e fotocamera (5 s) | — |
-| `s` | stato su una riga | `S fw=2.2 camera=1 heating=0 pc=1 fan=0 sht=1 T=… H=… hb_age=… wd=1 cycles=…` |
-| `v` | versione | `Webcam Board fw 2.2` |
+| `s` | stato su una riga | `S fw=2.3 camera=1 heating=0 pc=1 fan=0 sht=1 T=… H=… sht2=1 T2=… H2=… hb_age=… wd=1 cycles=…` |
+| `v` | versione | `Webcam Board fw 2.3` |
 | `?` | elenco comandi | — |
 | `i` | *(solo FTDI)* scansione del bus I2C | — |
 | `w` / `W` | *(solo FTDI)* sospende per 60 minuti / riattiva il watchdog dell'heartbeat | — |
@@ -236,6 +241,7 @@ Poi registra con timestamp ogni comando ricevuto e ogni cambio dei relè, e ogni
 |---|---|---|
 | `serial query d` non risponde | Scheda ferma o collegamento TX1 | Monitor FTDI: deve comparire il log di avvio. Controlla 3,3 V sul pin 1 di TX1 e i fili TX/RX incrociati. |
 | `t`/`u` rispondono `ERR`, log "SDA=0 SCL=0" | Sensore non alimentato, cavo invertito (Grove) o sensore guasto | Scollega il sensore: se SDA/SCL tornano a 1 il problema è nel sensore o nel cavo. |
+| `t`/`u` rispondono `ERR` dopo aver aggiunto il sensore esterno, oppure `T`/`U` rispondono `ERR` | I due sensori hanno lo stesso indirizzo | Con `i` dall'FTDI devono comparire 0x44 (interno) e 0x45 (esterno). Se ne compare uno solo, sposta il pin ADDR di uno dei due (o il ponticello sul modulo). |
 | Dopo un riavvio non scatta, log "Attendo la sincronizzazione dell'ora" | NTP non raggiungibile (rete assente o porta UDP 123 bloccata) | Controlla la connessione e il client NTP in *Sistema → Sistema*. Dopo *Wait for NTP* minuti scatta comunque. |
 | Foto in coda che non si svuota | Upload che fallisce, o coda più grande di quanto si carica in mezzo intervallo | Guarda l'errore nell'esito dello scatto. Su 4G lento riduci la dimensione JPEG della fotocamera o allunga l'intervallo. |
 | Scatti con "PTP Device Busy" | Autofocus che non aggancia | Obiettivo su **MF**. |
