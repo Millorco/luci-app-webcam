@@ -25,13 +25,18 @@ return view.extend({
 		o.value('f', 'Fahrenheit');
 		o.rmempty = false;
 
+		o = s.option(form.Flag, 'ext_sensor', _('Outside sensor'),
+			_('A second SHT31 outside the case, at I2C address 0x45 (ADDR pin to VCC). The inside sensor must be at 0x44. Needs board firmware 2.3 or later. Its readings are shown in Status, saved in the photo data file and sent to the inventory; the heater is still driven by the inside sensor only.'));
+		o.default = o.disabled;
+		o.rmempty = false;
+
 		o = s.option(form.Value, 'ntp_wait', _('Wait for NTP (minutes)'),
 			_('The router has no battery-backed clock: after a reboot no photo is taken until the time is synchronized with NTP, so photos never get an old date. After this many minutes it shoots anyway (0 = wait without limit). Keep the NTP client enabled in System &gt; System &gt; Time Synchronization.'));
 		o.datatype = 'uinteger';
 		o.placeholder = '30';
 
 		s = m.section(form.TypedSection, 'general', _('Anti-fog Heating'),
-			_('The heater is switched on automatically when the temperature measured by the SHT31/SHT35 gets close to the dew point, or drops below the minimum temperature (frost risk).'));
+			_('The heater is switched on automatically when the temperature measured by the SHT31/SHT35 inside the case gets close to the dew point, or drops below the minimum temperature (frost risk).'));
 		s.anonymous = true;
 
 		o = s.option(form.Flag, 'heating', _('Automatic heating'));

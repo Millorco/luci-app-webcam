@@ -9,7 +9,8 @@
  *   D6  RX1      SoftwareSerial dal router (tramite Q6)
  *   D7  TX1      SoftwareSerial verso il router (tramite Q5)
  *   D0/D1        seriale hardware sul connettore FTDI (debug)
- *   A4/A5        I2C verso il sensore SHT31 (indirizzo 0x44)
+ *   A4/A5        I2C verso i sensori SHT31: interno 0x44 (ADDR a GND),
+ *                esterno 0x45 (ADDR a VCC), facoltativo
  *
  * Protocollo (identico su router e FTDI, 9600 8N1, un carattere per comando,
  * nessun terminatore richiesto; spazi e a capo vengono ignorati):
@@ -18,17 +19,25 @@
  *   H/h  riscaldamento ON/OFF            (nessuna risposta)
  *   P/p  router ON/OFF                   (nessuna risposta)
  *   F/f  ventola ON/OFF                  (nessuna risposta)
- *   t    temperatura °C, es. "21.4"      ("ERR" se il sensore non risponde)
- *   u    umidità %, es. "55.0"           ("ERR" se il sensore non risponde)
+ *   t    temperatura interna °C, es. "21.4" ("ERR" se il sensore non risponde)
+ *   u    umidità interna %, es. "55.0"   ("ERR" se il sensore non risponde)
+ *   T    temperatura esterna °C          ("ERR" se il sensore non risponde)
+ *   U    umidità esterna %               ("ERR" se il sensore non risponde)
  *   d    test connessione                -> "OK"
  *   r    ciclo di alimentazione di router e fotocamera
- *   s    stato su una riga (relè, sensore, heartbeat, uptime, reset)
+ *   s    stato su una riga (relè, sensori, heartbeat, uptime, reset)
  *   v    versione firmware
  *   ?    elenco comandi
  * Solo dal connettore FTDI:
  *   w    sospende il watchdog dell'heartbeat per 60 minuti (prove al banco)
  *   W    riattiva subito il watchdog dell'heartbeat
  *   i    scansione del bus I2C
+ *
+ * Novità della 2.3: secondo sensore SHT31 esterno all'indirizzo 0x45
+ * (comandi T/U, campi sht2/T2/H2 nello stato). Il sensore interno deve
+ * stare a 0x44: solo lui comanda le protezioni del riscaldamento, che
+ * misurano la temperatura dentro il case. Prima della 2.3 l'unico
+ * sensore poteva stare indifferentemente a 0x44 o 0x45.
  *
  * Differenze rispetto alla versione precedente:
  *   - i comandi vengono eseguiti appena arriva il carattere: prima
@@ -56,7 +65,7 @@
 #include <avr/wdt.h>
 #include "Adafruit_SHT31.h"
 
-#define FW_VERSION "2.2"
+#define FW_VERSION "2.3"
 
 // --- Pin --------------------------------------------------------------------
 const uint8_t PIN_CAMERA  = 2;
@@ -66,7 +75,8 @@ const uint8_t PIN_FAN     = 5;
 const uint8_t PIN_RX1     = 6;
 const uint8_t PIN_TX1     = 7;
 
-const uint8_t SHT31_ADDR[] = { 0x44, 0x45 };
+const uint8_t SHT31_ADDR_INT = 0x44;   // dentro il case (protezioni riscaldamento)
+const uint8_t SHT31_ADDR_EXT = 0x45;   // fuori dal case, facoltativo
 
 // --- Tempi ------------------------------------------------------------------
 const unsigned long HEARTBEAT_TIMEOUT   = 600000UL; // 10 min senza 'b' -> ciclo di alimentazione
@@ -98,14 +108,29 @@ Output outputs[OUT_COUNT] = {
 };
 
 SoftwareSerial routerSerial(PIN_RX1, PIN_TX1);
-Adafruit_SHT31 sht31 = Adafruit_SHT31();
+
+// --- Sensori ----------------------------------------------------------------
+struct Sensor {
+	const char *name;
+	uint8_t addr;
+	Adafruit_SHT31 dev;
+	bool ok;
+	bool everSeen;           // trovato almeno una volta dall'avvio
+	float temp;
+	float hum;
+	unsigned long lastRead;
+	unsigned long lastOk;
+};
+
+Sensor sensors[2] = {
+	{ "interno", SHT31_ADDR_INT, Adafruit_SHT31(), false, false, NAN, NAN, 0, 0 },
+	{ "esterno", SHT31_ADDR_EXT, Adafruit_SHT31(), false, false, NAN, NAN, 0, 0 },
+};
+Sensor &sIn = sensors[0];
+Sensor &sExt = sensors[1];
 
 // --- Stato ------------------------------------------------------------------
-bool sensorOk = false;
-float lastTemp = NAN;
-float lastHum = NAN;
 unsigned long lastSensorRead = 0;
-unsigned long lastSensorOk = 0;
 
 bool hbWatchdogEnabled = true;
 unsigned long hbSuspendStart = 0;
@@ -172,39 +197,53 @@ void setOutput(uint8_t idx, bool on, const __FlashStringHelper *why) {
 	Serial.println(why);
 }
 
-// --- Sensore ----------------------------------------------------------------
-bool sensorBegin() {
-	sensorOk = false;
-	for (uint8_t i = 0; i < sizeof(SHT31_ADDR) && !sensorOk; i++) {
-		if (sht31.begin(SHT31_ADDR[i])) {
-			sensorOk = true;
-			logPrefix();
-			Serial.print(F("SHT31 inizializzato all'indirizzo 0x"));
-			Serial.println(SHT31_ADDR[i], HEX);
-		}
-	}
-	if (!sensorOk)
-		logLine(F("ERRORE: SHT31 non trovato (0x44/0x45)"));
-	return sensorOk;
+// --- Sensori ----------------------------------------------------------------
+void logSensor(const Sensor &x, const __FlashStringHelper *msg) {
+	logPrefix();
+	Serial.print(F("SHT31 "));
+	Serial.print(x.name);
+	Serial.print(F(" (0x"));
+	Serial.print(x.addr, HEX);
+	Serial.print(F(") "));
+	Serial.println(msg);
 }
 
-bool readSensor() {
+bool sensorBegin(Sensor &x) {
+	x.ok = x.dev.begin(x.addr);
+	if (x.ok) {
+		x.everSeen = true;
+		logSensor(x, F("inizializzato"));
+	} else if (&x == &sIn || x.everSeen) {
+		// L'esterno è facoltativo: se non c'è mai stato non lo si segnala
+		logSensor(x, F("ERRORE: non trovato"));
+	}
+	return x.ok;
+}
+
+bool readSensor(Sensor &x) {
 	float t = NAN, h = NAN;
-	bool ok = sht31.readBoth(&t, &h);
-	lastSensorRead = millis();
+	bool ok = x.dev.readBoth(&t, &h);
+	x.lastRead = millis();
 	if (!ok || isnan(t) || isnan(h)) {
-		if (sensorOk)
-			logLine(F("ERRORE: lettura SHT31 fallita"));
-		sensorOk = false;
+		if (x.ok)
+			logSensor(x, F("ERRORE: lettura fallita"));
+		x.ok = false;
 		return false;
 	}
-	if (!sensorOk)
-		logLine(F("SHT31 di nuovo disponibile"));
-	sensorOk = true;
-	lastSensorOk = lastSensorRead;
-	lastTemp = t;
-	lastHum = h;
+	if (!x.ok)
+		logSensor(x, F("di nuovo disponibile"));
+	x.ok = true;
+	x.everSeen = true;
+	x.lastOk = x.lastRead;
+	x.temp = t;
+	x.hum = h;
 	return true;
+}
+
+// Lettura periodica; un sensore muto viene reinizializzato ogni minuto circa
+void pollSensor(Sensor &x, unsigned long now) {
+	if (!readSensor(x) && now - x.lastOk >= SENSOR_INTERVAL * 6)
+		sensorBegin(x);
 }
 
 // --- Risposte ---------------------------------------------------------------
@@ -218,11 +257,17 @@ void printStatus(Stream &port) {
 		port.print(outputs[i].on ? 1 : 0);
 	}
 	port.print(F(" sht="));
-	port.print(sensorOk ? 1 : 0);
+	port.print(sIn.ok ? 1 : 0);
 	port.print(F(" T="));
-	if (isnan(lastTemp)) port.print(F("NA")); else port.print(lastTemp, 1);
+	if (isnan(sIn.temp)) port.print(F("NA")); else port.print(sIn.temp, 1);
 	port.print(F(" H="));
-	if (isnan(lastHum)) port.print(F("NA")); else port.print(lastHum, 1);
+	if (isnan(sIn.hum)) port.print(F("NA")); else port.print(sIn.hum, 1);
+	port.print(F(" sht2="));
+	port.print(sExt.ok ? 1 : 0);
+	port.print(F(" T2="));
+	if (isnan(sExt.temp)) port.print(F("NA")); else port.print(sExt.temp, 1);
+	port.print(F(" H2="));
+	if (isnan(sExt.hum)) port.print(F("NA")); else port.print(sExt.hum, 1);
 	port.print(F(" hb_age="));
 	if (hbEverReceived) port.print((now - lastHeartbeat) / 1000UL); else port.print(F("never"));
 	port.print(F(" hb_count="));
@@ -237,7 +282,7 @@ void printStatus(Stream &port) {
 
 void printHelp(Stream &port) {
 	port.println(F("b heartbeat | C/c camera | H/h heating | P/p router | F/f fan"));
-	port.println(F("t temp | u hum | d test | r power cycle | s status | v version"));
+	port.println(F("t/u temp/hum interni | T/U temp/hum esterni | d test | r power cycle | s status | v version"));
 	port.println(F("w/W (solo FTDI) sospendi 60 min / riattiva watchdog heartbeat | i scansione I2C"));
 }
 
@@ -301,10 +346,16 @@ void processCommand(char cmd, Stream &port, bool fromRouter) {
 	case 'F': lastFanCmd = millis(); setOutput(OUT_FAN, true, F("comando F")); break;
 	case 'f': setOutput(OUT_FAN, false, F("comando f")); break;
 	case 't':
-		if (readSensor()) port.println(lastTemp, 1); else port.println(F("ERR"));
+		if (readSensor(sIn)) port.println(sIn.temp, 1); else port.println(F("ERR"));
 		break;
 	case 'u':
-		if (readSensor()) port.println(lastHum, 1); else port.println(F("ERR"));
+		if (readSensor(sIn)) port.println(sIn.hum, 1); else port.println(F("ERR"));
+		break;
+	case 'T':
+		if (readSensor(sExt)) port.println(sExt.temp, 1); else port.println(F("ERR"));
+		break;
+	case 'U':
+		if (readSensor(sExt)) port.println(sExt.hum, 1); else port.println(F("ERR"));
 		break;
 	case 'd':
 		port.println(F("OK"));
@@ -422,8 +473,12 @@ void setup() {
 	Wire.begin();
 	Wire.setWireTimeout(25000, true);
 	scanI2C();
-	sensorBegin();
-	readSensor();
+	for (uint8_t i = 0; i < 2; i++) {
+		if (sensorBegin(sensors[i]))
+			readSensor(sensors[i]);
+	}
+	if (!sExt.ok)
+		logLine(F("Sensore esterno (0x45) assente: si usa solo quello interno"));
 
 	lastHeartbeat = millis();
 	lastStatusLog = millis();
@@ -467,14 +522,24 @@ void loop() {
 		setOutput(OUT_FAN, false, F("sicurezza: F non ripetuto da 20 minuti"));
 
 	// Lettura periodica del sensore e protezioni del riscaldamento
+	// (le protezioni usano solo il sensore interno)
 	if (now - lastSensorRead >= SENSOR_INTERVAL) {
-		if (!readSensor() && now - lastSensorOk >= SENSOR_INTERVAL * 6)
-			sensorBegin(); // prova a reinizializzarlo ogni minuto circa
+		lastSensorRead = now;
+		pollSensor(sIn, now);
+		// L'esterno si cerca solo se c'è stato almeno una volta, oppure
+		// ogni minuto circa per accorgersi di uno collegato dopo l'avvio
+		if (sExt.everSeen)
+			pollSensor(sExt, now);
+		else if (now - sExt.lastRead >= SENSOR_INTERVAL * 6) {
+			sExt.lastRead = now;
+			if (sExt.dev.begin(sExt.addr) && readSensor(sExt))
+				logSensor(sExt, F("trovato"));
+		}
 		if (outputs[OUT_HEATING].on) {
-			if (sensorOk && lastTemp > HEATER_MAX_TEMP)
-				setOutput(OUT_HEATING, false, F("protezione: temperatura oltre 45 C"));
-			else if (!sensorOk && now - lastSensorOk > SENSOR_FAIL_TIMEOUT)
-				setOutput(OUT_HEATING, false, F("protezione: sensore non disponibile"));
+			if (sIn.ok && sIn.temp > HEATER_MAX_TEMP)
+				setOutput(OUT_HEATING, false, F("protezione: temperatura interna oltre 45 C"));
+			else if (!sIn.ok && now - sIn.lastOk > SENSOR_FAIL_TIMEOUT)
+				setOutput(OUT_HEATING, false, F("protezione: sensore interno non disponibile"));
 		}
 	}
 

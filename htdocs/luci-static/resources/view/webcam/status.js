@@ -28,6 +28,12 @@ function fmtTemp(c, scale) {
 	return c.toFixed(1) + ' °C';
 }
 
+function fmtHum(h) {
+	if (h === null || h === undefined)
+		return '-';
+	return h.toFixed(1) + ' %';
+}
+
 function resultText(cap) {
 	if (cap.result === 'ok')
 		return _('OK');
@@ -117,10 +123,16 @@ return view.extend({
 			rows.push(row(_('Update check'), self.updateCheckCell(upd)));
 
 			if (st) {
-				rows.push(row(_('Sensor'), st.sensor_ok ? _('OK') : _('Read error')));
-				rows.push(row(_('Temperature'), fmtTemp(st.temperature, scale)));
-				rows.push(row(_('Humidity'), st.humidity !== null ? st.humidity.toFixed(1) + ' %' : '-'));
-				rows.push(row(_('Dew point'), fmtTemp(st.dewpoint, scale)));
+				rows.push(row(_('Inside sensor'), st.sensor_ok ? _('OK') : _('Read error')));
+				rows.push(row(_('Inside temperature'), fmtTemp(st.temperature, scale)));
+				rows.push(row(_('Inside humidity'), fmtHum(st.humidity)));
+				rows.push(row(_('Inside dew point'), fmtTemp(st.dewpoint, scale)));
+				if (st.ext_sensor) {
+					rows.push(row(_('Outside sensor'), st.ext_sensor_ok ? _('OK') : _('Read error')));
+					rows.push(row(_('Outside temperature'), fmtTemp(st.temperature_ext, scale)));
+					rows.push(row(_('Outside humidity'), fmtHum(st.humidity_ext)));
+					rows.push(row(_('Outside dew point'), fmtTemp(st.dewpoint_ext, scale)));
+				}
 				rows.push(row(_('Automatic heating'), st.heating_enabled ? _('Enabled') : _('Disabled')));
 				rows.push(row(_('Heater'), st.heater ? _('On') : _('Off')));
 				rows.push(row(_('Last reading'), fmtTime(st.time)));
