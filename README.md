@@ -56,6 +56,7 @@ Lo script:
 2. installa o aggiorna le dipendenze (`gphoto2`, `libgphoto2-drivers-ptp2`, `curl`, `coreutils-stty`, e per la VPN `wireguard-tools`, `kmod-wireguard`, `luci-proto-wireguard`), con opkg o con apk (OpenWrt 25.12+);
 3. copia i file. Se esiste già una configurazione, chiede se sovrascriverla;
 4. abilita e avvia il servizio `webcam_capture`. Il servizio aggiunge al crontab di root, senza toccare gli altri job, l'heartbeat (ogni 3 minuti) e il controllo anti-appannamento (ogni 5 minuti). Imposta anche `cronloglevel` a 9 in `/etc/config/system`, così crond non scrive più nel log una riga a livello errore per ogni job eseguito.
+5. spegne tutti i LED del router (`add_led_config`), così non si riflettono nella foto: per ogni LED in `/sys/class/leds` imposta in `/etc/config/system` trigger `none` e luminosità 0, quindi restano spenti anche dopo il riavvio. Chi aggiorna estraendo l'archivio della release ottiene lo stesso al riavvio successivo, tramite `/etc/uci-defaults/90-webcam-leds`. Per tenerli accesi: `uci set webcam.general.leds_off=0; uci commit webcam` prima di installare, poi riaccenderli da **Sistema → Configurazione LED**.
 
 Dopo l'installazione, con la fotocamera collegata e accesa, genera gli elenchi di ISO, diaframmi e tempi che compaiono nei menu di LuCI:
 
@@ -268,6 +269,7 @@ cat /tmp/webcam/capture.json /tmp/webcam/status.json
     ├── etc/config/webcam                      configurazione UCI
     ├── etc/init.d/webcam_capture              servizio procd + job cron
     ├── etc/hotplug.d/ntp/25-webcam            segnala l'ora sincronizzata con NTP
+    ├── etc/uci-defaults/90-webcam-leds        spegne i LED dopo un aggiornamento da archivio
     ├── usr/bin/
     │   ├── capture, capture_service           scatto e ciclo di scatto
     │   ├── capture_now                        scatto manuale dalla pagina Status

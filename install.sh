@@ -306,11 +306,20 @@ download_and_install() {
             cp "$file" "$dest_path" 2>/dev/null || true
 
             case "$dest_path" in
-                /usr/bin/*|/usr/sbin/*|/usr/libexec/webcam/*|/etc/init.d/*)
+                /usr/bin/*|/usr/sbin/*|/usr/libexec/webcam/*|/etc/init.d/*|/etc/uci-defaults/*)
                     chmod +x "$dest_path" 2>/dev/null || true
                     ;;
             esac
         done
+    fi
+
+    # Spegne i LED del router, così non si riflettono nella foto.
+    # Lo stesso script è in /etc/uci-defaults per chi aggiorna estraendo
+    # l'archivio della release: qui è già stato eseguito, quindi si cancella
+    # (le versioni vecchie non hanno quel file e non toccano i LED).
+    if [ -f /etc/uci-defaults/90-webcam-leds ] && [ -x /usr/bin/add_led_config ]; then
+        /usr/bin/add_led_config || true
+        rm -f /etc/uci-defaults/90-webcam-leds
     fi
 
     echo "Pulizia cache LuCI..."

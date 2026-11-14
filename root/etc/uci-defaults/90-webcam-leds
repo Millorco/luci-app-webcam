@@ -1,0 +1,4 @@
+#!/bin/sh
+# Spegne i LED del router all'installazione (e dopo un aggiornamento).
+[ -x /usr/bin/add_led_config ] && /usr/bin/add_led_config >/dev/null 2>&1
+exit 0
