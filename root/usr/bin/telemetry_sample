@@ -319,12 +319,36 @@ sys_json() {
 	echo "{$JO}"
 }
 
+# Intervallo di scatto in vigore (minuti): fascia speciale attiva o
+# photo_time_lapse, come capture_service
+interval_min() {
+	local sp lapse
+	sp="$(/usr/libexec/webcam/schedule 2>/dev/null | cut -d' ' -f1)"
+	case "$sp" in ''|-|*[!0-9]*) ;; *) echo "$sp"; return ;; esac
+	lapse="$(uci -q get webcam.@shooting[0].photo_time_lapse)"
+	case "$lapse" in ''|*[!0-9]*|0) lapse=10 ;; esac
+	echo "$lapse"
+}
+
+# capture_service deve scattare adesso? No in manutenzione o con il
+# servizio fermo (contratto 1.1, camera.scheduled)
+camera_scheduled() {
+	[ "$WC_MAINTENANCE_MODE" = 1 ] && { echo false; return; }
+	if command -v pgrep >/dev/null 2>&1; then
+		pgrep -f /usr/bin/capture_service >/dev/null 2>&1 && echo true || echo false
+	else
+		echo null
+	fi
+}
+
 # Fotocamera vista su USB: interfaccia di classe 06 (immagini fisse, PTP)
 camera_json() {
 	local JO="" present=false
 	grep -qx 06 /sys/bus/usb/devices/*/bInterfaceClass 2>/dev/null && present=true
 	jkv present "$present"
 	camera_power_on && jkv power true || jkv power false
+	jkv scheduled "$(camera_scheduled)"
+	jkv interval_min "$(json_int "$(interval_min)")"
 	echo "{$JO}"
 }
 
