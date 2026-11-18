@@ -12,11 +12,16 @@
 # ne legge i valori e li aggiunge allo stato; il riscaldamento resta
 # comandato solo dal sensore interno.
 #
-# Scrive lo stato in /tmp/webcam/status.json (pagina Status di LuCI).
+# Scrive lo stato in /tmp/webcam/status.json (pagina Status di LuCI, JSON
+# delle foto e telemetria), con l'umidità assoluta (g/m³) e lo stato della
+# ventola. Accensione e spegnimento del riscaldamento, sensori che non
+# rispondono e cambi di firmware della scheda diventano anche eventi per
+# il portal (event/1), oltre alla riga di log.
 # Eseguito da cron ogni 5 minuti.
 # ---------------------------------------------------
 
 . /usr/bin/webcam.cfg
+. /usr/libexec/webcam/common.sh
 
 SERIAL=/usr/libexec/webcam/serial
 STATE_FILE="$WC_STATE_DIR/heater"       # 1 = acceso, 0 = spento
@@ -62,14 +67,37 @@ dewpoint() {
 	}'
 }
 
+# Umidità assoluta in g/m³ (stesse costanti di Magnus del punto di rugiada)
+abs_humidity() {
+	awk -v t="$1" -v h="$2" 'BEGIN {
+		printf "%.2f", 216.7 * (h / 100 * 6.112 * exp(17.62 * t / (243.12 + t))) / (273.15 + t)
+	}'
+}
+
+# Evento solo al cambio di stato di un sensore ($1 int/ext, $2 1 = ok)
+sensor_event() {
+	local f="$WC_STATE_DIR/sensor_err_$1" name
+	[ "$1" = int ] && name="interno (0x44)" || name="esterno (0x45)"
+	if [ "$2" = 1 ]; then
+		[ -f "$f" ] && { rm -f "$f"; wc_event sensor.ok notice "Sensore $name di nuovo funzionante" "{\"sensor\":\"$1\"}"; }
+	elif [ ! -f "$f" ]; then
+		touch "$f"
+		wc_event sensor.error error "Sensore $name di temperatura e umidità non risponde" "{\"sensor\":\"$1\"}"
+	fi
+}
+
 SENSOR_OK=1
 DEWPOINT=""
+ABS_HUM=""
+ABS_HUM_EXT=""
 if [ -z "$TEMP" ] || [ -z "$HUM" ]; then
 	SENSOR_OK=0
 	log "ERRORE: sensore interno di temperatura e umidità non risponde (SHT31 a 0x44 o scheda scollegati?): riscaldamento lasciato invariato."
 else
 	DEWPOINT=$(dewpoint "$TEMP" "$HUM")
+	ABS_HUM=$(abs_humidity "$TEMP" "$HUM")
 fi
+sensor_event int "$SENSOR_OK"
 
 # Sensore esterno (facoltativo)
 EXT_OK=0
@@ -86,7 +114,9 @@ if [ "$WC_EXT_SENSOR" = 1 ]; then
 	else
 		EXT_OK=1
 		DEWPOINT_EXT=$(dewpoint "$TEMP_EXT" "$HUM_EXT")
+		ABS_HUM_EXT=$(abs_humidity "$TEMP_EXT" "$HUM_EXT")
 	fi
+	sensor_event ext "$EXT_OK"
 fi
 
 DECISION="$HEATER"
@@ -113,8 +143,31 @@ else
 	# torna allineato anche dopo un riavvio del router o della scheda.
 	PREV="$HEATER"
 	set_heater "$DECISION"
-	[ "$DECISION" != "$PREV" ] && \
+	if [ "$DECISION" != "$PREV" ]; then
 		log "Riscaldamento $( [ "$DECISION" = 1 ] && echo ACCESO || echo SPENTO ) (T=${TEMP} RH=${HUM} Td=${DEWPOINT}$( [ "$EXT_OK" = 1 ] && echo " esterno: T=${TEMP_EXT} RH=${HUM_EXT} Td=${DEWPOINT_EXT}"))"
+		wc_event "heating.$( [ "$DECISION" = 1 ] && echo on || echo off )" info \
+			"Riscaldamento $( [ "$DECISION" = 1 ] && echo acceso || echo spento )" \
+			"{\"temperature\":$(json_dec "$TEMP"),\"humidity\":$(json_dec "$HUM"),\"dewpoint\":$(json_dec "$DEWPOINT"),\"temperature_ext\":$(json_dec "$TEMP_EXT")}"
+	fi
+fi
+
+# Ventola: segue il riscaldamento se heat_fan = 1 (stato voluto)
+FAN=0
+[ "$WC_HEAT_FAN" = 1 ] && [ "$HEATER" = 1 ] && FAN=1
+
+# Firmware della scheda cambiato (salvato in flash solo al cambio)
+FW_FILE=/etc/webcam/board_fw
+if [ -n "$BOARD_FW" ]; then
+	OLD_FW="$(cat "$FW_FILE" 2>/dev/null)"
+	if [ "$OLD_FW" != "$BOARD_FW" ]; then
+		mkdir -p /etc/webcam
+		echo "$BOARD_FW" > "$FW_FILE"
+		if [ -n "$OLD_FW" ]; then
+			log "Firmware della scheda cambiato: $OLD_FW -> $BOARD_FW"
+			wc_event board.version_change info "Firmware della scheda $OLD_FW -> $BOARD_FW" \
+				"{\"component\":\"board\",\"from\":$(json_str "$OLD_FW"),\"to\":$(json_str "$BOARD_FW")}"
+		fi
+	fi
 fi
 
 num() { [ -n "$1" ] && echo "$1" || echo null; }
@@ -126,13 +179,16 @@ cat > "$STATUS_JSON.tmp" <<JSON
   "temperature": $(num "$TEMP"),
   "humidity": $(num "$HUM"),
   "dewpoint": $(num "$DEWPOINT"),
+  "abs_humidity": $(num "$ABS_HUM"),
   "ext_sensor": $( [ "$WC_EXT_SENSOR" = 1 ] && echo true || echo false ),
   "ext_sensor_ok": $( [ "$EXT_OK" = 1 ] && echo true || echo false ),
   "temperature_ext": $(num "$TEMP_EXT"),
   "humidity_ext": $(num "$HUM_EXT"),
   "dewpoint_ext": $(num "$DEWPOINT_EXT"),
+  "abs_humidity_ext": $(num "$ABS_HUM_EXT"),
   "heating_enabled": $( [ "$WC_HEATING" = 1 ] && echo true || echo false ),
   "heater": $( [ "$HEATER" = 1 ] && echo true || echo false ),
+  "fan": $( [ "$FAN" = 1 ] && echo true || echo false ),
   "board_fw": $( [ -n "$BOARD_FW" ] && echo "\"$BOARD_FW\"" || echo null )
 }
 JSON

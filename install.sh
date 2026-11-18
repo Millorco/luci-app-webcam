@@ -179,6 +179,7 @@ install_packages() {
     REQUIRED_PACKAGES="
 coreutils-stty
 curl
+ca-bundle
 gphoto2
 libgphoto2-drivers-ptp2
 wireguard-tools

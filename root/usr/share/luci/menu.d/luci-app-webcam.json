@@ -36,6 +36,14 @@
 			"path": "webcam/camera_setting"
 		}
 	},
+	"admin/services/webcam/portal": {
+		"title": "Portal",
+		"order": 25,
+		"action": {
+			"type": "view",
+			"path": "webcam/portal"
+		}
+	},
 	"admin/services/webcam/up_server": {
 		"title": "Photo Save",
 		"order": 30,

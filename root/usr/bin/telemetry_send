@@ -1,0 +1,209 @@
+#!/bin/sh
+# ---------------------------------------------------
+# Invio della telemetria al portal (POST /api/v1/telemetry), di norma
+# ogni 30 minuti da cron.
+#
+# Uso: telemetry_send [--cron|--print]
+#   (nessuna opzione)  invia subito
+#   --cron   attende da 0 a 120 secondi a caso, così i router non
+#            arrivano tutti insieme
+#   --print  stampa il lotto che verrebbe inviato
+#
+# Prende dalla coda fino a 288 campioni (dal più vecchio), li avvolge nel
+# lotto telemetry/1 e li toglie solo quando il portal risponde 200: dopo
+# un'interruzione di rete svuota la coda con più lotti di fila.
+# Prima dell'invio corregge l'ora dei campioni presi prima della
+# sincronizzazione NTP (stesso avvio). Poi manda gli eventi rimasti in coda.
+# Esito in /tmp/webcam/telemetry_status.json (pagina Status).
+# ---------------------------------------------------
+
+. /usr/bin/webcam.cfg
+. /usr/libexec/webcam/common.sh
+
+LOGTAG="$WC_NAME telemetry"
+QDIR="$WC_STATE_DIR/telemetry"
+[ -n "$WC_QUEUE_DIR" ] && [ -d "$WC_QUEUE_DIR" ] && QDIR="${WC_QUEUE_DIR%/}/telemetry"
+QLOCK=/var/lock/webcam_telemetry.lock
+SEND_LOCK=/var/lock/webcam_telemetry_send.lock
+STATUS="$WC_STATE_DIR/telemetry_status.json"
+BATCH=288
+MAX_ROUNDS=8            # al massimo 8 lotti per giro (~1 settimana di campioni)
+
+log() {
+	case "$1" in
+		ERRORE*) logger -p user.err -t "$LOGTAG" "$@" ;;
+		ATTENZIONE*) logger -p user.warning -t "$LOGTAG" "$@" ;;
+		OK*) logger -p user.info -t "$LOGTAG" "$@" ;;
+		*) logger -t "$LOGTAG" "$@" ;;
+	esac
+}
+
+MODE="$1"
+case "$MODE" in
+	''|--cron|--print) ;;
+	*) sed -n '3,19p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+esac
+
+wc_portal_enabled || { [ "$MODE" = --print ] && echo "Portal non configurato (portal_url, portal_token)." >&2; exit 0; }
+case "$WC_PORTAL_URL" in
+	http://*|https://*) ;;
+	*) log "ERRORE: portal_url non valido: deve iniziare con https:// (o http:// in prova)"; exit 1 ;;
+esac
+mkdir -p "$WC_STATE_DIR"
+
+header() {
+	local JO="" fw
+	fw="$(wc_board_fw)"
+	jkv schema '"telemetry/1"'
+	jkv mac "$(json_str "$(get_mac)")"
+	jkv hostname "$(json_str "$(wc_hostname)")"
+	jkv app_version "$(json_str "$(wc_app_version)")"
+	jkv board_fw "$(json_str "$fw")"
+	jkv boot_id "$(json_str "$(wc_boot_id)")"
+	jkv sent_at "$(date +%s)"
+	jkv time_synced "$(wc_time_synced)"
+	jkv camera "$(counters_json)"
+	echo "$JO"
+}
+
+build_batch() {
+	local n="$1" out="$2"
+	{
+		printf '{%s,"samples":[' "$(header)"
+		jq_head "$QDIR" "$n" | sed '$!s/$/,/'
+		printf ']}\n'
+	} > "$out"
+}
+
+write_status() {
+	cat > "$STATUS.tmp" <<JSON
+{
+  "time": $(date +%s),
+  "code": $(json_num "$1"),
+  "result": $(json_str "$2"),
+  "last_ok": $(json_num "$LAST_OK"),
+  "last_sent": $(json_num "$LAST_SENT"),
+  "queued": $(jq_count "$QDIR")
+}
+JSON
+	mv "$STATUS.tmp" "$STATUS"
+}
+
+# Avviso se l'ora del router è molto diversa da quella del portal
+check_clock() {
+	local st d
+	st="$(wc_jget "$1" server_time)"
+	case "$st" in ''|*[!0-9]*) return ;; esac
+	d=$(( $(date +%s) - st ))
+	[ "$d" -lt 0 ] && d=$(( -d ))
+	if [ "$d" -gt 300 ] && [ ! -f "$WC_STATE_DIR/clock_warned" ]; then
+		log "ATTENZIONE: l'ora del router differisce di $d s da quella del portal (NTP non sincronizzato?)."
+		touch "$WC_STATE_DIR/clock_warned"
+	elif [ "$d" -le 300 ]; then
+		rm -f "$WC_STATE_DIR/clock_warned"
+	fi
+}
+
+if [ "$MODE" = --print ]; then
+	n="$(jq_count "$QDIR")"
+	[ "$n" -gt 0 ] || { echo "Nessun campione in coda." >&2; exit 0; }
+	[ "$n" -gt "$BATCH" ] && n="$BATCH"
+	build_batch "$n" /dev/stdout
+	exit 0
+fi
+
+wc_lock "$SEND_LOCK" 1800 0 || exit 0
+TMP="$(mktemp -d /tmp/webcam_telemetry.XXXXXX)" || { wc_unlock "$SEND_LOCK"; exit 1; }
+trap 'rm -rf "$TMP"; wc_unlock "$SEND_LOCK"' EXIT INT TERM
+
+[ "$MODE" = --cron ] && sleep "$(awk 'BEGIN { srand(); print int(rand() * 120) }')"
+
+LAST_OK="$(wc_jget "$STATUS" last_ok)"
+LAST_SENT="$(wc_jget "$STATUS" last_sent)"
+size="$BATCH"
+round=0
+total=0
+while [ "$round" -lt "$MAX_ROUNDS" ]; do
+	round=$(( round + 1 ))
+	wait="$(wc_portal_wait_left)"
+	if [ "$wait" -gt 0 ]; then
+		write_status 429 "il portal ha chiesto di aspettare ancora $wait s"
+		break
+	fi
+
+	wc_lock "$QLOCK" 120 20 || { log "ATTENZIONE: coda della telemetria occupata, riprovo al prossimo giro."; break; }
+	jq_fix_time "$QDIR"
+	n="$(jq_count "$QDIR")"
+	[ "$n" -gt "$size" ] && n="$size"
+	[ "$n" -gt 0 ] && build_batch "$n" "$TMP/batch.json"
+	wc_unlock "$QLOCK"
+	[ "$n" -gt 0 ] || { [ "$round" = 1 ] && write_status "" "nessun campione in coda"; break; }
+
+	# gzip di busybox: un lotto di un giorno passa da ~290 KB a ~30 KB
+	set -- -H 'Content-Type: application/json'
+	if gzip -c "$TMP/batch.json" > "$TMP/batch.gz" 2>/dev/null; then
+		set -- "$@" -H 'Content-Encoding: gzip' --data-binary "@$TMP/batch.gz"
+	else
+		set -- "$@" --data-binary "@$TMP/batch.json"
+	fi
+	code="$(wc_portal_call /api/v1/telemetry "$TMP/resp" -m 120 "$@")"
+	reason="$(wc_portal_reason "$code" "$TMP/resp")"
+
+	case "$code" in
+		200|201)
+			# Tutti gli id del lotto escono dalla coda: accettati, duplicati e
+			# rifiutati (un campione rifiutato non migliora riprovando)
+			wc_lock "$QLOCK" 120 20 && { jq_drop "$QDIR" "$n"; wc_unlock "$QLOCK"; }
+			check_clock "$TMP/resp"
+			acc="$(wc_jget "$TMP/resp" accepted)"
+			dup="$(wc_jget "$TMP/resp" duplicates)"
+			rej="$(grep -o '"error"' "$TMP/resp" | wc -l | tr -d ' ')"
+			if [ "${rej:-0}" -gt 0 ]; then
+				log "ATTENZIONE: il portal ha rifiutato $rej campioni su $n: $(sed -n 's/.*"rejected":\(\[[^]]*\]\).*/\1/p' "$TMP/resp" | cut -c1-200)"
+			fi
+			total=$(( total + n ))
+			LAST_OK="$(date +%s)"
+			LAST_SENT="$n"
+			write_status "$code" "ok: ${acc:-?} accettati, ${dup:-0} duplicati, ${rej:-0} rifiutati"
+			;;
+		413)
+			# Lotto troppo grande: si dimezza e si riprova
+			if [ "$n" -gt 1 ]; then
+				size=$(( n / 2 ))
+				round=$(( round - 1 ))
+				[ "$size" -lt 1 ] && size=1
+				continue
+			fi
+			wc_lock "$QLOCK" 120 20 && { jq_drop "$QDIR" 1; wc_unlock "$QLOCK"; }
+			log "ERRORE: il portal rifiuta anche un campione singolo come troppo grande (HTTP 413): scartato."
+			write_status "$code" "$reason"
+			size="$BATCH"
+			;;
+		400|415|422)
+			wc_lock "$QLOCK" 120 20 && { jq_drop "$QDIR" "$n"; wc_unlock "$QLOCK"; }
+			log "ERRORE: il portal ha rifiutato il lotto di $n campioni ($reason): scartati."
+			write_status "$code" "$reason"
+			;;
+		429)
+			wc_portal_set_retry "$TMP/resp.hdr"
+			write_status "$code" "$reason"
+			break
+			;;
+		401|403|409)
+			log "ERRORE: invio della telemetria non riuscito: $reason. I campioni restano in coda."
+			write_status "$code" "$reason"
+			break
+			;;
+		*)
+			log "ATTENZIONE: invio della telemetria non riuscito ($reason): $(jq_count "$QDIR") campioni in coda, riprovo al prossimo giro."
+			write_status "$code" "$reason"
+			break
+			;;
+	esac
+done
+
+[ "$total" -gt 0 ] && log "OK telemetria inviata: $total campioni, ne restano $(jq_count "$QDIR")."
+
+# Eventi rimasti in coda (rete assente quando sono nati)
+/usr/libexec/webcam/event --send </dev/null >/dev/null 2>&1
+exit 0

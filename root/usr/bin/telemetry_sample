@@ -1,0 +1,381 @@
+#!/bin/sh
+# ---------------------------------------------------
+# Campione di telemetria ogni 5 minuti (contratto telemetry/1), anche
+# senza foto, di notte e in manutenzione.
+#
+# Uso: telemetry_sample [--cron|--print|--save-counters]
+#   (nessuna opzione)  prende un campione e lo mette in coda
+#   --cron             come sopra, ma prima aspetta che climate (stesso
+#                      minuto in cron) abbia aggiornato status.json
+#   --print            stampa il campione senza metterlo in coda
+#   --save-counters    salva subito i contatori della fotocamera nella
+#                      flash (all'arresto del servizio)
+#
+# Il campione contiene clima (status.json di climate), Victron se attivo,
+# rete (traffico WAN, segnale 4G se il modem lo dice), router (memoria,
+# spazio, coda delle foto) e stato della fotocamera. Va in coda in
+# /tmp/webcam/telemetry (o <queue_dir>/telemetry sulla chiavetta) solo
+# se il portal è configurato; telemetry_send lo manda ogni 30 minuti.
+# L'ultimo campione resta in /tmp/webcam/telemetry_last.json (pagina Status).
+# ---------------------------------------------------
+
+. /usr/bin/webcam.cfg
+. /usr/libexec/webcam/common.sh
+
+LOGTAG="$WC_NAME telemetry"
+QDIR="$WC_STATE_DIR/telemetry"
+[ -n "$WC_QUEUE_DIR" ] && [ -d "$WC_QUEUE_DIR" ] && QDIR="${WC_QUEUE_DIR%/}/telemetry"
+QLOCK=/var/lock/webcam_telemetry.lock
+SEQ_FILE="$WC_STATE_DIR/telemetry_seq"
+LAST="$WC_STATE_DIR/telemetry_last.json"
+TICK="$WC_STATE_DIR/power_tick"
+CAMERA_POWER="$WC_STATE_DIR/camera_power"
+MAX_SAMPLES=2016        # 7 giorni a 5 minuti
+TMP_RESERVE_KB=4096     # in RAM la coda non toglie spazio alle foto
+
+log() {
+	case "$1" in
+		ERRORE*) logger -p user.err -t "$LOGTAG" "$@" ;;
+		ATTENZIONE*) logger -p user.warning -t "$LOGTAG" "$@" ;;
+		*) logger -t "$LOGTAG" "$@" ;;
+	esac
+}
+
+MODE="$1"
+case "$MODE" in
+	''|--cron|--print) ;;
+	--save-counters) counters_persist force; exit 0 ;;
+	*) sed -n '3,20p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+esac
+
+mkdir -p "$WC_STATE_DIR"
+
+if [ "$MODE" = --cron ]; then
+	# climate gira nello stesso minuto e impiega ~20 s (seriale)
+	START=$(date +%s)
+	i=0
+	while [ "$i" -lt 90 ]; do
+		[ -f "$WC_STATE_DIR/status.json" ] && \
+			[ "$(date -r "$WC_STATE_DIR/status.json" +%s)" -ge "$START" ] && break
+		# Dopo 30 s, se la seriale è libera climate ha finito (o non gira)
+		[ "$i" -ge 30 ] && [ ! -d /var/lock/webcam_serial.lock ] && break
+		sleep 5
+		i=$(( i + 5 ))
+	done
+fi
+
+# ---------------------------------------------------
+# Contatori: ore di accensione della fotocamera (relè acceso, che è lo
+# stato normale: capture lo spegne solo nel riavvio dalla scheda)
+# ---------------------------------------------------
+camera_power_on() {
+	[ "$(cat "$CAMERA_POWER" 2>/dev/null)" != 0 ]
+}
+
+tick_counters() {
+	local up last d
+	up="$(wc_uptime)"
+	last="$(cat "$TICK" 2>/dev/null)"
+	case "$last" in ''|*[!0-9]*) last=0 ;; esac
+	d=$(( up - last ))
+	[ "$d" -lt 0 ] && d=0
+	[ "$d" -gt 900 ] && d=900
+	echo "$up" > "$TICK"
+	camera_power_on && [ "$d" -gt 0 ] && counter_add power_on_s "$d"
+	counters_apply_initial
+	counters_persist
+}
+
+# ---------------------------------------------------
+# Victron
+# ---------------------------------------------------
+POWER_JSON=""
+read_victron() {
+	local out err cs prev state="$WC_STATE_DIR/victron_error"
+
+	[ "$WC_VICTRON" = 1 ] || { rm -f "$WC_VICTRON_JSON"; return; }
+	out="$(/usr/libexec/webcam/vedirect "$WC_VICTRON_PORT" $WC_VICTRON_SHUNT_PORT 2>/dev/null)"
+	prev="$(cat "$state" 2>/dev/null)"
+	if [ -n "$out" ]; then
+		echo "$out" > "$WC_VICTRON_JSON"
+		POWER_JSON="$out"
+		err="$(echo "$out" | sed -n 's/.*"error":\([0-9]*\).*/\1/p')"
+		cs="$(echo "$out" | sed -n 's/.*"charge_state":\([0-9]*\).*/\1/p')"
+		if [ -n "$err" ] && [ "$err" != 0 ]; then
+			if [ "$prev" != "err$err" ]; then
+				log "ERRORE: il regolatore Victron segnala l'errore $err (fase di carica ${cs:-?})."
+				wc_event power.error error "Victron: errore $err" "{\"error\":$err,\"charge_state\":$(json_num "$cs")}"
+				echo "err$err" > "$state"
+			fi
+		else
+			[ -n "$prev" ] && log "Victron di nuovo senza errori."
+			rm -f "$state"
+		fi
+	else
+		POWER_JSON=null
+		if [ "$prev" != noanswer ]; then
+			log "ERRORE: nessuna risposta dal Victron su $WC_VICTRON_PORT (cavo VE.Direct-USB scollegato o porta sbagliata?)."
+			wc_event power.error error "Victron: nessuna risposta su $WC_VICTRON_PORT" '{"error":null,"charge_state":null}'
+			echo noanswer > "$state"
+		fi
+	fi
+}
+
+# ---------------------------------------------------
+# Rete
+# ---------------------------------------------------
+NET_IF=""
+NET_DEV=""
+find_wan() {
+	if [ -f /lib/functions/network.sh ]; then
+		. /lib/functions/network.sh
+		network_find_wan NET_IF
+		[ -n "$NET_IF" ] && network_get_device NET_DEV "$NET_IF"
+	fi
+	[ -n "$NET_DEV" ] || NET_DEV="$(ip route show default 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n 1)"
+	[ -n "$NET_IF" ] || NET_IF="$NET_DEV"
+}
+
+# Dati radio: in R_* (vuoti se il modem non li dice)
+R_TYPE=""; R_OP=""; R_RSSI=""; R_RSRP=""; R_RSRQ=""; R_SINR=""
+
+radio_type() {
+	case "$1" in
+		*[Nn][Rr]*|*5g*|*5G*) echo nr ;;
+		*[Ll][Tt][Ee]*|*4g*|*4G*) echo lte ;;
+		*[Ww][Cc][Dd][Mm][Aa]*|*[Uu][Mm][Tt][Ss]*|*[Hh][Ss][Pp][Aa]*|*3g*|*3G*) echo umts ;;
+		*[Gg][Ss][Mm]*|*[Ee][Dd][Gg][Ee]*|*[Gg][Pp][Rr][Ss]*|*2g*|*2G*) echo gsm ;;
+	esac
+}
+
+# Primo numero (anche decimale e negativo) di una stringa: "-95dBm" -> -95
+first_num() {
+	printf '%s' "$1" | grep -oE -- '-?[0-9]+(\.[0-9]+)?' | head -n 1
+}
+first_int() {
+	first_num "$1" | sed 's/\..*//'
+}
+
+radio_uqmi() {
+	local dev js
+	command -v uqmi >/dev/null 2>&1 || return 1
+	dev="$(uci -q get "network.$NET_IF.device")"
+	[ -c "$dev" ] || return 1
+	js="$(wc_timeout 10 uqmi -s -d "$dev" --get-signal-info 2>/dev/null)"
+	[ -n "$js" ] || return 1
+	R_TYPE="$(radio_type "$(echo "$js" | sed -n 's/.*"type": *"\([^"]*\)".*/\1/p')")"
+	R_RSSI="$(first_int "$(echo "$js" | sed -n 's/.*"rssi": *\(-\{0,1\}[0-9.]*\).*/\1/p')")"
+	R_RSRP="$(first_int "$(echo "$js" | sed -n 's/.*"rsrp": *\(-\{0,1\}[0-9.]*\).*/\1/p')")"
+	R_RSRQ="$(first_num "$(echo "$js" | sed -n 's/.*"rsrq": *\(-\{0,1\}[0-9.]*\).*/\1/p')")"
+	R_SINR="$(first_num "$(echo "$js" | sed -n 's/.*"snr": *\(-\{0,1\}[0-9.]*\).*/\1/p')")"
+	js="$(wc_timeout 10 uqmi -s -d "$dev" --get-serving-system 2>/dev/null)"
+	R_OP="$(echo "$js" | sed -n 's/.*"plmn_description": *"\([^"]*\)".*/\1/p')"
+	return 0
+}
+
+radio_mmcli() {
+	local kv sig flag="$WC_STATE_DIR/mm_signal_setup"
+	command -v mmcli >/dev/null 2>&1 || return 1
+	kv="$(wc_timeout 10 mmcli -m any -K 2>/dev/null)"
+	[ -n "$kv" ] || return 1
+	if [ ! -f "$flag" ]; then
+		wc_timeout 10 mmcli -m any --signal-setup=60 >/dev/null 2>&1
+		touch "$flag"
+	fi
+	R_OP="$(echo "$kv" | sed -n 's/^modem\.3gpp\.operator-name *: *//p' | head -n 1)"
+	[ "$R_OP" = "--" ] && R_OP=""
+	R_TYPE="$(radio_type "$(echo "$kv" | sed -n 's/^modem\.generic\.access-technologies\.value\[1\] *: *//p' | head -n 1)")"
+	sig="$(wc_timeout 10 mmcli -m any --signal-get -K 2>/dev/null)"
+	case "$R_TYPE" in
+		nr) set -- 5g ;;
+		umts) set -- umts ;;
+		gsm) set -- gsm ;;
+		*) set -- lte ;;
+	esac
+	R_RSSI="$(first_int "$(echo "$sig" | sed -n "s/^modem\.signal\.$1\.rssi *: *//p")")"
+	R_RSRP="$(first_int "$(echo "$sig" | sed -n "s/^modem\.signal\.$1\.rsrp *: *//p")")"
+	R_RSRQ="$(first_num "$(echo "$sig" | sed -n "s/^modem\.signal\.$1\.rsrq *: *//p")")"
+	R_SINR="$(first_num "$(echo "$sig" | sed -n "s/^modem\.signal\.$1\.\(snr\|sinr\) *: *//p")")"
+	return 0
+}
+
+# Chiavetta 4G in modalità HiLink (Huawei E3372h): vista come una scheda
+# ethernet, con il gateway 192.168.8.1. I dati radio si leggono dalla sua
+# API web: prima il token di sessione, poi il segnale.
+xml_tag() {
+	printf '%s' "$1" | tr -d '\r\n' | sed -n "s:.*<$2>\([^<]*\)</$2>.*:\1:p"
+}
+
+radio_hilink() {
+	local a="$WC_HILINK_ADDR" tok ses sig mode plmn
+	[ "$WC_HILINK" = 1 ] && [ -n "$a" ] || return 1
+	# Solo se la chiavetta è davvero il gateway: niente attese inutili
+	ip route show default 2>/dev/null | grep -q " via $a " || return 1
+	tok="$(curl -s -m 4 "http://$a/api/webserver/SesTokInfo" 2>/dev/null)"
+	ses="$(xml_tag "$tok" SesInfo)"
+	tok="$(xml_tag "$tok" TokInfo)"
+	[ -n "$tok" ] || return 1
+	sig="$(curl -s -m 4 -H "Cookie: $ses" -H "__RequestVerificationToken: $tok" \
+		"http://$a/api/device/signal" 2>/dev/null)"
+	case "$sig" in *"<error>"*|'') return 1 ;; esac
+	R_RSSI="$(first_int "$(xml_tag "$sig" rssi)")"
+	R_RSRP="$(first_int "$(xml_tag "$sig" rsrp)")"
+	R_RSRQ="$(first_num "$(xml_tag "$sig" rsrq)")"
+	R_SINR="$(first_num "$(xml_tag "$sig" sinr)")"
+	mode="$(xml_tag "$sig" mode)"
+	case "$mode" in
+		7) R_TYPE=lte ;;
+		2) R_TYPE=umts ;;
+		0) R_TYPE=gsm ;;
+		11) R_TYPE=nr ;;
+	esac
+	# Operatore: serve un token nuovo per ogni richiesta su alcuni firmware
+	tok="$(curl -s -m 4 "http://$a/api/webserver/SesTokInfo" 2>/dev/null)"
+	plmn="$(curl -s -m 4 -H "Cookie: $(xml_tag "$tok" SesInfo)" \
+		-H "__RequestVerificationToken: $(xml_tag "$tok" TokInfo)" \
+		"http://$a/api/net/current-plmn" 2>/dev/null)"
+	R_OP="$(xml_tag "$plmn" ShortName)"
+	[ -n "$R_OP" ] || R_OP="$(xml_tag "$plmn" FullName)"
+	return 0
+}
+
+# Valore radio solo se nel campo previsto dal contratto
+in_range() {
+	[ -n "$1" ] && awk -v v="$1" -v lo="$2" -v hi="$3" 'BEGIN { exit !(v >= lo && v <= hi) }' && echo "$1"
+}
+
+net_json() {
+	local JO="" proto type rx tx hs vpn now
+	find_wan
+	proto="$(uci -q get "network.$NET_IF.proto")"
+	case "$proto" in
+		qmi) radio_uqmi ;;
+		modemmanager) radio_mmcli ;;
+		*) radio_hilink || radio_mmcli ;;
+	esac
+	if [ -n "$R_TYPE" ]; then
+		type="$R_TYPE"
+	elif [ -d "/sys/class/net/$NET_DEV/wireless" ] || [ -e "/sys/class/net/$NET_DEV/phy80211" ]; then
+		type=wifi
+	elif [ -n "$NET_DEV" ]; then
+		case "$proto" in
+			qmi|mbim|ncm|3g|modemmanager) type=lte ;;
+			*) type=wan ;;
+		esac
+	fi
+	rx="$(cat "/sys/class/net/$NET_DEV/statistics/rx_bytes" 2>/dev/null)"
+	tx="$(cat "/sys/class/net/$NET_DEV/statistics/tx_bytes" 2>/dev/null)"
+	vpn=null
+	if command -v wg >/dev/null 2>&1 && [ -d /sys/class/net/wglog ]; then
+		hs="$(wg show wglog latest-handshakes 2>/dev/null | awk '{ print $2 }' | sort -n | tail -n 1)"
+		now="$(date +%s)"
+		case "$hs" in
+			''|*[!0-9]*) vpn=false ;;
+			*) [ "$hs" -gt 0 ] && [ $(( now - hs )) -lt 180 ] && vpn=true || vpn=false ;;
+		esac
+	fi
+	jkv iface "$(json_str "$(printf '%s' "$NET_IF" | cut -c1-16)")"
+	jkv type "$(json_str "$type")"
+	[ -n "$R_OP" ] && jkv operator "$(json_str "$(printf '%s' "$R_OP" | cut -c1-32)")"
+	[ -n "$(in_range "$R_RSSI" -150 0)" ] && jkv rssi_dbm "$(json_int "$R_RSSI")"
+	[ -n "$(in_range "$R_RSRP" -160 0)" ] && jkv rsrp_dbm "$(json_int "$R_RSRP")"
+	[ -n "$(in_range "$R_RSRQ" -40 10)" ] && jkv rsrq_db "$(json_dec "$R_RSRQ")"
+	[ -n "$(in_range "$R_SINR" -30 50)" ] && jkv sinr_db "$(json_dec "$R_SINR")"
+	jkv rx_bytes "$(json_int "$rx")"
+	jkv tx_bytes "$(json_int "$tx")"
+	jkv wan_ip "$(json_str "$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n 1)")"
+	jkv vpn_up "$vpn"
+	echo "{$JO}"
+}
+
+# ---------------------------------------------------
+# Router
+# ---------------------------------------------------
+photo_queue_dir() {
+	if [ -n "$WC_QUEUE_DIR" ] && [ -d "$WC_QUEUE_DIR" ]; then
+		echo "${WC_QUEUE_DIR%/}"
+	else
+		echo /tmp/webcam/queue
+	fi
+}
+
+sys_json() {
+	local JO="" q
+	q="$(photo_queue_dir)"
+	jkv load1 "$(json_dec "$(cut -d' ' -f1 /proc/loadavg)")"
+	jkv mem_free_kb "$(json_int "$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo)")"
+	jkv tmp_free_kb "$(json_int "$(df -Pk /tmp 2>/dev/null | awk 'NR == 2 { print $4 }')")"
+	jkv disk_free_kb "$(json_int "$(df -k /overlay 2>/dev/null | awk 'NR == 2 { print $4 }')")"
+	if [ -d "$q" ]; then
+		# Una foto per FTP e portal insieme conta una volta sola
+		jkv queue_photos "$(find "$q" -path "$q/rejected" -prune -o -type f -name '*.jpg' -print 2>/dev/null | sed 's:.*/::' | sort -u | wc -l | tr -d ' ')"
+		jkv queue_kb "$(json_int "$(du -sk "$q" 2>/dev/null | awk '{ print $1 }')")"
+	else
+		jkv queue_photos 0
+		jkv queue_kb 0
+	fi
+	jkv queue_samples "$(jq_count "$QDIR")"
+	jkv maintenance "$(json_bool "$WC_MAINTENANCE_MODE")"
+	echo "{$JO}"
+}
+
+# Fotocamera vista su USB: interfaccia di classe 06 (immagini fisse, PTP)
+camera_json() {
+	local JO="" present=false
+	grep -qx 06 /sys/bus/usb/devices/*/bInterfaceClass 2>/dev/null && present=true
+	jkv present "$present"
+	camera_power_on && jkv power true || jkv power false
+	echo "{$JO}"
+}
+
+climate_json() {
+	wc_json_fresh "$WC_STATE_DIR/status.json" 900 || echo null
+}
+
+# ---------------------------------------------------
+
+[ "$MODE" = --print ] || tick_counters
+read_victron
+
+BOOT="$(wc_boot_id)"
+SEQ="$(cat "$SEQ_FILE" 2>/dev/null)"
+case "$SEQ" in ''|*[!0-9]*) SEQ=0 ;; esac
+[ "$MODE" = --print ] || { SEQ=$(( SEQ + 1 )); echo "$SEQ" > "$SEQ_FILE"; }
+
+# Prime chiavi in quest'ordine: jq_fix_time corregge l'ora dopo NTP
+S="{\"id\":\"$BOOT-$SEQ\",\"time\":$(date +%s),\"time_synced\":$(wc_time_synced),\"uptime\":$(wc_uptime)"
+S="$S,\"climate\":$(climate_json)"
+[ "$WC_VICTRON" = 1 ] && S="$S,\"power\":${POWER_JSON:-null}"
+S="$S,\"net\":$(net_json)"
+S="$S,\"sys\":$(sys_json)"
+S="$S,\"camera\":$(camera_json)}"
+
+if [ "$MODE" = --print ]; then
+	echo "$S"
+	exit 0
+fi
+
+# Per la pagina Status: ultimo campione e contatori
+printf '{"sample":%s,"counters":%s}\n' "$S" "$(counters_json)" > "$LAST.tmp" && mv "$LAST.tmp" "$LAST"
+
+[ "$WC_TELEMETRY" = 1 ] && wc_portal_enabled || exit 0
+
+wc_lock "$QLOCK" 120 20 || { log "ATTENZIONE: coda della telemetria occupata, campione $BOOT-$SEQ perso."; exit 1; }
+jq_append "$QDIR" "$S" 12
+DROPPED="$(jq_prune "$QDIR" "$MAX_SAMPLES")"
+# In RAM: se /tmp si riempie si scartano i più vecchi (le foto contano di più)
+case "$QDIR" in
+	/tmp/*)
+		while [ "$(df -Pk /tmp | awk 'NR == 2 { print $4 }')" -lt "$TMP_RESERVE_KB" ] && [ "$(jq_count "$QDIR")" -gt 12 ]; do
+			jq_drop "$QDIR" 12
+			DROPPED=$(( DROPPED + 12 ))
+		done
+		;;
+esac
+wc_unlock "$QLOCK"
+
+if [ "$DROPPED" -gt 0 ]; then
+	log "ATTENZIONE: coda della telemetria piena, scartati i $DROPPED campioni più vecchi."
+	wc_event telemetry.dropped warning "Coda della telemetria piena: scartati $DROPPED campioni" "{\"count\":$DROPPED}"
+fi
+exit 0

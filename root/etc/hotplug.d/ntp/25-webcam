@@ -10,17 +10,28 @@
 # corregge l'ora, ACTION=stratum quando cambia lo stratum e
 # ACTION=periodic ogni 11 minuti circa; stratum=16 vuol dire "non
 # sincronizzato". Il file è in /var/run (RAM), quindi sparisce a ogni
-# riavvio.
+# riavvio. Alla prima sincronizzazione dopo l'avvio si manda anche
+# l'evento ntp.synced al portal (se configurato): da lì i campioni di
+# telemetria e gli eventi presi prima vengono corretti con l'ora giusta.
 # ---------------------------------------------------
+
+FLAG=/var/run/webcam_ntp_synced
+
+synced() {
+	[ -f "$FLAG" ] && return
+	touch "$FLAG"
+	[ -x /usr/libexec/webcam/event ] && \
+		/usr/libexec/webcam/event ntp.synced debug "Ora sincronizzata con NTP" </dev/null >/dev/null 2>&1 &
+}
 
 case "$ACTION" in
 	step)
-		touch /var/run/webcam_ntp_synced
+		synced
 		;;
 	stratum|periodic)
 		case "$stratum" in
 			''|*[!0-9]*) ;;
-			*) [ "$stratum" -lt 16 ] && touch /var/run/webcam_ntp_synced ;;
+			*) [ "$stratum" -lt 16 ] && synced ;;
 		esac
 		;;
 esac

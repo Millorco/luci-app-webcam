@@ -89,6 +89,25 @@ function versionCell(installed, latest, url) {
 	]);
 }
 
+var CHARGE_STATES = {
+	0: _('Off'), 2: _('Fault'), 3: _('Bulk'), 4: _('Absorption'), 5: _('Float'),
+	7: _('Equalize'), 245: _('Starting'), 252: _('External control')
+};
+
+function fmtNum(v, unit, digits) {
+	if (v === null || v === undefined)
+		return '-';
+	return (digits !== undefined ? Number(v).toFixed(digits) : String(v)) + (unit ? ' ' + unit : '');
+}
+
+function targetText(t) {
+	if (t === 'portal')
+		return _('Portal');
+	if (t === 'both')
+		return _('Portal and FTP');
+	return _('FTP/FTPS/SFTP');
+}
+
 function row(label, value) {
 	return E('tr', { 'class': 'tr' }, [
 		E('td', { 'class': 'td left', 'width': '33%' }, label),
@@ -109,9 +128,15 @@ return view.extend({
 			readJSON('/tmp/webcam/status.json'),
 			readJSON('/tmp/webcam/capture.json'),
 			L.resolveDefault(fs.read('/usr/share/webcam/version'), null),
-			readJSON('/tmp/webcam/updates.json')
+			readJSON('/tmp/webcam/updates.json'),
+			readJSON('/tmp/webcam/telemetry_last.json'),
+			readJSON('/tmp/webcam/telemetry_status.json'),
+			readJSON('/tmp/webcam/victron.json'),
+			readJSON('/tmp/webcam/camera_info.json')
 		]).then(function(res) {
 			var st = res[0], cap = res[1], upd = res[3] || {}, rows = [];
+			var tl = res[4] || {}, ts = res[5], vic = res[6], ci = res[7];
+			var portalURL = uci.get('webcam', 'server', 'portal_url');
 			var appVersion = res[2] ? res[2].trim() : null;
 
 			rows.push(row(_('App version'), appVersion
@@ -144,10 +169,55 @@ return view.extend({
 				rows.push(row(_('Last photo'), fmtTime(cap.time) + ' - ' + (cap.file || '')));
 				rows.push(row(_('Mode'), (cap.mode === 'night' ? _('Night') : _('Day')) + (cap.special ? ' (' + cap.special + ')' : '')));
 				rows.push(row(_('Result'), resultText(cap)));
+				if (cap.target)
+					rows.push(row(_('Photo destination'), targetText(cap.target)
+						+ (cap.target !== 'ftp' && cap.portal ? ' - ' + _('portal: %s').format(cap.portal === 'ok' ? _('OK') : cap.portal) : '')));
+				if (cap.time_synced === false)
+					rows.push(row(_('Photo time'), E('span', { 'style': 'color:#c60' }, _('not synchronized with NTP when the photo was taken'))));
 				if (cap.queued > 0)
 					rows.push(row(_('Waiting for upload'), _('%d photos in the offline queue').format(cap.queued)));
 			} else {
 				rows.push(row(_('Last photo'), _('No photo taken yet')));
+			}
+
+			if (portalURL) {
+				var sample = tl.sample || {};
+				var queued = ts ? ts.queued : (sample.sys ? sample.sys.queue_samples : null);
+				rows.push(row(_('Telemetry queue'), queued !== null && queued !== undefined
+					? _('%d samples waiting').format(queued) : '-'));
+				if (ts)
+					rows.push(row(_('Last telemetry send'), (ts.last_ok ? fmtTime(ts.last_ok) : _('never'))
+						+ (ts.result && !/^ok/.test(ts.result) ? ' - ' + _('last attempt %s: %s').format(fmtTime(ts.time), ts.result) : '')));
+				else
+					rows.push(row(_('Last telemetry send'), _('Not sent yet (every 30 minutes)')));
+			}
+
+			if (uci.get('webcam', 'general', 'victron') === '1') {
+				if (vic) {
+					rows.push(row(_('Battery (Victron)'), fmtNum(vic.battery_v, 'V', 2) + ', ' + fmtNum(vic.battery_a, 'A', 2)
+						+ (vic.soc_pct !== null && vic.soc_pct !== undefined ? ', ' + fmtNum(vic.soc_pct, '%', 1) : '')));
+					rows.push(row(_('Charge state'), vic.charge_state !== null && vic.charge_state !== undefined
+						? (CHARGE_STATES[vic.charge_state] || String(vic.charge_state)) : '-'));
+					rows.push(row(_('Solar panel'), fmtNum(vic.panel_v, 'V', 1) + ', ' + fmtNum(vic.panel_w, 'W')
+						+ ' - ' + _('today %s').format(fmtNum(vic.yield_today_wh, 'Wh'))));
+					if (vic.error)
+						rows.push(row(_('Victron error'), E('strong', { 'style': 'color:#c00' }, String(vic.error))));
+					rows.push(row(_('Victron reading'), fmtTime(vic.time)));
+				} else {
+					rows.push(row(_('Victron'), _('No data (VE.Direct cable connected? read every 5 minutes)')));
+				}
+			}
+
+			var cnt = tl.counters;
+			if (cnt || ci) {
+				cnt = cnt || {};
+				ci = ci || {};
+				rows.push(row(_('Camera'), [ ci.model || cnt.model, (ci.serial || cnt.serial) ? '#' + (ci.serial || cnt.serial) : null ]
+					.filter(function(x) { return x; }).join(' ') || '-'));
+				rows.push(row(_('Shots (router counter)'), fmtNum(cnt.shots_total)
+					+ (ci.shutter_count !== null && ci.shutter_count !== undefined ? ' - ' + _('camera shutter count %d').format(ci.shutter_count) : '')));
+				rows.push(row(_('Camera power-on hours'), fmtNum(cnt.power_on_hours, 'h', 1)
+					+ ' - ' + _('%s restarts, %s failed shots').format(fmtNum(cnt.power_cycles), fmtNum(cnt.capture_errors))));
 			}
 
 			container.innerHTML = '';

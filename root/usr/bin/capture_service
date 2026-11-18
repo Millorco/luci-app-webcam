@@ -4,6 +4,7 @@ WC_NAME="$(uci -q get system.@system[0].hostname)"
 LOGTAG="${WC_NAME:-webcam} capture"
 SCHEDULE=/usr/libexec/webcam/schedule
 PING=/usr/libexec/webcam/hc_ping
+EVENT=/usr/libexec/webcam/event
 
 # Livello syslog dal prefisso del messaggio, così in VictoriaLogs gli
 # errori sono rossi, gli avvisi gialli e le foto caricate verdi.
@@ -87,7 +88,42 @@ wait_for_clock() {
 # Avvio del servizio (anche dopo un riavvio del router): una riga nel
 # registro del check con l'uptime, così i riavvii inattesi si vedono.
 UPTIME=$(cut -d. -f1 /proc/uptime)
+VERSION="$(cat /usr/share/webcam/version 2>/dev/null)"
 "$PING" -w log "${WC_NAME:-webcam}: servizio avviato, router acceso da $UPTIME s" </dev/null >/dev/null 2>&1 &
+
+# Riga fissa nel syslog a ogni avvio: in VictoriaLogs i riavvii si
+# contano con "servizio avviato" anche se il portal non è raggiungibile
+log "OK: servizio avviato, versione ${VERSION:-?}, router acceso da $UPTIME s"
+
+# Eventi per il portal (event/1): avvio del router (una volta per boot_id)
+# o solo del servizio, e cambio di versione dell'app
+BOOT_ID="$(tr -d '-' < /proc/sys/kernel/random/boot_id 2>/dev/null | cut -c1-8)"
+BOOT_FLAG=/tmp/webcam/boot_event
+mkdir -p /tmp/webcam
+if [ "$(cat "$BOOT_FLAG" 2>/dev/null)" != "$BOOT_ID" ]; then
+    echo "$BOOT_ID" > "$BOOT_FLAG"
+    # Uptime prima del riavvio: l'ultimo salvato con i contatori (al più
+    # un'ora prima dello spegnimento)
+    PREV_UP="$(sed -n 's/^last_uptime=//p' /etc/webcam/counters 2>/dev/null | tail -n 1)"
+    case "$PREV_UP" in ''|*[!0-9]*) PREV_UP=null ;; esac
+    "$EVENT" boot notice "Avvio del router, servizio webcam ${VERSION:-?}" \
+        "{\"board_reset_cause\":null,\"previous_uptime\":$PREV_UP}" </dev/null >/dev/null 2>&1 &
+else
+    "$EVENT" service.start notice "Servizio webcam riavviato (router acceso da $UPTIME s)" \
+        "{\"uptime\":$UPTIME}" </dev/null >/dev/null 2>&1 &
+fi
+
+# Versione dell'app cambiata (salvata in flash solo al cambio)
+OLD_VERSION="$(cat /etc/webcam/app_version 2>/dev/null)"
+if [ -n "$VERSION" ] && [ "$OLD_VERSION" != "$VERSION" ]; then
+    mkdir -p /etc/webcam
+    echo "$VERSION" > /etc/webcam/app_version
+    if [ -n "$OLD_VERSION" ]; then
+        log "Aggiornamento: luci-app-webcam $OLD_VERSION -> $VERSION"
+        "$EVENT" app.version_change info "luci-app-webcam $OLD_VERSION -> $VERSION" \
+            "{\"component\":\"app\",\"from\":\"$OLD_VERSION\",\"to\":\"$VERSION\"}" </dev/null >/dev/null 2>&1 &
+    fi
+fi
 
 wait_for_clock
 
@@ -111,8 +147,10 @@ while true; do
     if [ "$WC_MAINTENANCE_MODE" != "$LAST_MAINT" ]; then
         if [ "$WC_MAINTENANCE_MODE" = 1 ]; then
             "$PING" log "${WC_NAME:-webcam}: modalità manutenzione attiva, nessuno scatto" </dev/null >/dev/null 2>&1 &
+            [ -n "$LAST_MAINT" ] && "$EVENT" maintenance.on notice "Modalità manutenzione attiva" </dev/null >/dev/null 2>&1 &
         elif [ -n "$LAST_MAINT" ]; then
             "$PING" log "${WC_NAME:-webcam}: modalità manutenzione terminata" </dev/null >/dev/null 2>&1 &
+            "$EVENT" maintenance.off notice "Modalità manutenzione terminata" </dev/null >/dev/null 2>&1 &
         fi
         LAST_MAINT="$WC_MAINTENANCE_MODE"
     fi

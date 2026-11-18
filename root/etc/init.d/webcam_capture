@@ -14,7 +14,9 @@ ensure_cron() {
     for entry in \
         "*/3 * * * *|/usr/bin/heartbeat" \
         "*/5 * * * *|/usr/bin/climate" \
-        "0 */6 * * *|/usr/bin/inventory_report --cron"
+        "0 */6 * * *|/usr/bin/inventory_report --cron" \
+        "*/5 * * * *|/usr/bin/telemetry_sample --cron" \
+        "*/30 * * * *|/usr/bin/telemetry_send --cron"
     do
         cmd="${entry#*|}"
         if ! grep -q "^[^#].*$cmd" "$CRONTAB"; then
@@ -47,5 +49,11 @@ start_service() {
     procd_set_param stdout 1
     procd_set_param stderr 1
     procd_close_instance
+}
+
+# Contatori della fotocamera nella flash prima di uno spegnimento
+# ordinato (riavvio, aggiornamento); altrimenti si salvano ogni ora
+stop_service() {
+    /usr/bin/telemetry_sample --save-counters >/dev/null 2>&1
 }
 

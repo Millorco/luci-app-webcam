@@ -1,0 +1,182 @@
+#!/bin/sh
+# ---------------------------------------------------
+# Eventi del router per il portal (contratto event/1).
+#
+# Uso:
+#   event TIPO GRAVITÀ MESSAGGIO [DATI_JSON]
+#       mette l'evento in coda e prova subito a mandarlo
+#       (es. event camera.error error "scatto fallito" '{"file":"raw_...jpg"}')
+#   event --send
+#       manda la coda (anche da telemetry_send ogni 30 minuti)
+#   event --print
+#       stampa il lotto che verrebbe mandato, senza inviarlo
+#
+# GRAVITÀ: debug, info, notice, warning, error, critical.
+# La riga di log la scrive chi chiama, come prima: l'evento si aggiunge.
+# Senza portal_url e portal_token non fa nulla.
+# La coda è in /tmp/webcam/events (o in <queue_dir>/events sulla
+# chiavetta), al massimo 500 eventi; si manda a lotti di 100.
+# ---------------------------------------------------
+
+. /usr/bin/webcam.cfg
+. /usr/libexec/webcam/common.sh
+
+LOGTAG="$WC_NAME event"
+QDIR="$WC_STATE_DIR/events"
+[ -n "$WC_QUEUE_DIR" ] && [ -d "$WC_QUEUE_DIR" ] && QDIR="${WC_QUEUE_DIR%/}/events"
+QLOCK=/var/lock/webcam_events.lock
+SEND_LOCK=/var/lock/webcam_events_send.lock
+SEQ_FILE="$WC_STATE_DIR/event_seq"
+STATUS="$WC_STATE_DIR/event_status.json"
+MAX_QUEUE=500
+BATCH=100
+
+log() {
+	case "$1" in
+		ERRORE*) logger -p user.err -t "$LOGTAG" "$@" ;;
+		ATTENZIONE*) logger -p user.warning -t "$LOGTAG" "$@" ;;
+		*) logger -t "$LOGTAG" "$@" ;;
+	esac
+}
+
+wc_portal_enabled || exit 0
+mkdir -p "$WC_STATE_DIR"
+
+write_status() {
+	cat > "$STATUS.tmp" <<JSON
+{
+  "time": $(date +%s),
+  "code": $(json_num "$1"),
+  "result": $(json_str "$2"),
+  "last_ok": $(json_num "$3"),
+  "queued": $(jq_count "$QDIR")
+}
+JSON
+	mv "$STATUS.tmp" "$STATUS"
+}
+
+add_event() {
+	local type="$1" sev="$2" msg="$3" data="$4" seq boot dropped line
+
+	case "$type" in
+		[a-z]*) ;;
+		*) echo "Tipo non valido: $type" >&2; exit 2 ;;
+	esac
+	case "$sev" in
+		debug|info|notice|warning|error|critical) ;;
+		*) sev=notice ;;
+	esac
+	[ -n "$data" ] || data=null
+	msg="$(printf '%s' "$msg" | cut -c1-500)"
+
+	wc_lock "$QLOCK" 60 10 || return 1
+	seq="$(cat "$SEQ_FILE" 2>/dev/null)"
+	case "$seq" in ''|*[!0-9]*) seq=0 ;; esac
+	seq=$(( seq + 1 ))
+	echo "$seq" > "$SEQ_FILE"
+	boot="$(wc_boot_id)"
+	# Prime chiavi in quest'ordine: jq_fix_time corregge l'ora dopo NTP
+	line="{\"id\":\"$boot-E$seq\",\"time\":$(date +%s),\"time_synced\":$(wc_time_synced),\"uptime\":$(wc_uptime),\"type\":$(json_str "$type"),\"severity\":\"$sev\",\"message\":$(json_str "$msg"),\"data\":$data}"
+	jq_append "$QDIR" "$line" 50
+	dropped="$(jq_prune "$QDIR" "$MAX_QUEUE")"
+	wc_unlock "$QLOCK"
+	[ "$dropped" -gt 0 ] && log "ATTENZIONE: coda degli eventi piena, scartati i $dropped più vecchi."
+	return 0
+}
+
+header() {
+	local JO=""
+	jkv schema '"event/1"'
+	jkv mac "$(json_str "$(get_mac)")"
+	jkv hostname "$(json_str "$(wc_hostname)")"
+	jkv app_version "$(json_str "$(wc_app_version)")"
+	jkv sent_at "$(date +%s)"
+	jkv time_synced "$(wc_time_synced)"
+	echo "$JO"
+}
+
+# Lotto con le prime N righe della coda in $2
+build_batch() {
+	local n="$1" out="$2"
+	{
+		printf '{%s,"events":[' "$(header)"
+		jq_head "$QDIR" "$n" | sed '$!s/$/,/'
+		printf ']}\n'
+	} > "$out"
+}
+
+send_queue() {
+	local tmp n code reason wait last_ok rounds=0
+
+	wc_lock "$SEND_LOCK" 300 0 || exit 0
+	tmp="$(mktemp -d /tmp/webcam_event.XXXXXX)" || { wc_unlock "$SEND_LOCK"; exit 1; }
+	trap 'rm -rf "$tmp"; wc_unlock "$SEND_LOCK"' EXIT INT TERM
+	last_ok="$(wc_jget "$STATUS" last_ok)"
+
+	while [ "$rounds" -lt 10 ]; do
+		rounds=$(( rounds + 1 ))
+		wait="$(wc_portal_wait_left)"
+		[ "$wait" -gt 0 ] && break
+
+		wc_lock "$QLOCK" 60 10 || break
+		jq_fix_time "$QDIR"
+		n="$(jq_count "$QDIR")"
+		[ "$n" -gt "$BATCH" ] && n="$BATCH"
+		[ "$n" -gt 0 ] && build_batch "$n" "$tmp/batch.json"
+		wc_unlock "$QLOCK"
+		[ "$n" -gt 0 ] || break
+
+		code="$(wc_portal_call /api/v1/event "$tmp/resp" -m 60 \
+			-H 'Content-Type: application/json' --data-binary "@$tmp/batch.json")"
+		reason="$(wc_portal_reason "$code" "$tmp/resp")"
+		case "$code" in
+			200|201)
+				wc_lock "$QLOCK" 60 10 && { jq_drop "$QDIR" "$n"; wc_unlock "$QLOCK"; }
+				last_ok="$(date +%s)"
+				write_status "$code" ok "$last_ok"
+				;;
+			400|413|415|422)
+				# Il lotto non migliora riprovando: si scarta
+				wc_lock "$QLOCK" 60 10 && { jq_drop "$QDIR" "$n"; wc_unlock "$QLOCK"; }
+				log "ERRORE: il portal ha rifiutato $n eventi ($reason): scartati."
+				write_status "$code" "$reason" "$last_ok"
+				;;
+			429)
+				wc_portal_set_retry "$tmp/resp.hdr"
+				write_status "$code" "$reason" "$last_ok"
+				break
+				;;
+			401|403|409)
+				log "ERRORE: invio degli eventi al portal non riuscito: $reason. Restano in coda."
+				write_status "$code" "$reason" "$last_ok"
+				break
+				;;
+			*)
+				# Rete o server: si riprova al prossimo evento o tra 30 minuti
+				write_status "$code" "$reason" "$last_ok"
+				break
+				;;
+		esac
+	done
+}
+
+case "$1" in
+	--send)
+		send_queue
+		;;
+	--print)
+		n="$(jq_count "$QDIR")"
+		[ "$n" -gt 0 ] || { echo "Nessun evento in coda." >&2; exit 0; }
+		[ "$n" -gt "$BATCH" ] && n="$BATCH"
+		build_batch "$n" /dev/stdout
+		;;
+	''|-*)
+		sed -n '3,20p' "$0" | sed 's/^# \{0,1\}//' >&2
+		exit 2
+		;;
+	*)
+		add_event "$1" "$2" "$3" "$4" || exit 1
+		send_queue
+		;;
+esac
+exit 0

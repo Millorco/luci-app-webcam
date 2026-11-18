@@ -16,6 +16,7 @@
 # ---------------------------------------------------
 
 . /usr/bin/webcam.cfg
+. /usr/libexec/webcam/common.sh
 . /usr/share/libubox/jshn.sh
 
 MODE="$1"
@@ -48,17 +49,8 @@ case "$MODE" in
 		;;
 esac
 
-# MAC della prima scheda di rete fisica: identifica il router anche se
-# cambia nome
-get_mac() {
-	local i m
-	for i in eth0 br-lan $(ls /sys/class/net 2>/dev/null); do
-		m="$(cat "/sys/class/net/$i/address" 2>/dev/null)"
-		case "$m" in ''|00:00:00:00:00:00) continue ;; esac
-		echo "$m"
-		return
-	done
-}
+# MAC della prima scheda di rete fisica (get_mac in common.sh): identifica
+# il router anche se cambia nome
 
 json_get() { [ -s "$1" ] && jsonfilter -i "$1" -e "$2" 2>/dev/null | head -n 1; }
 
@@ -78,10 +70,27 @@ camera_model() {
 	echo "$m" | sed 's/[[:space:]]*$//'
 }
 
+# Foto diverse in coda (una foto che aspetta sia FTP sia portal conta una
+# volta; le rifiutate dal portal no)
 queue_count() {
 	local dir="${WC_QUEUE_DIR:-/tmp/webcam/queue}"
 	[ -d "$dir" ] || { echo 0; return; }
-	find "$dir" -type f -name '*.jpg' 2>/dev/null | wc -l
+	find "$dir" -path "$dir/rejected" -prune -o -type f -name '*.jpg' -print 2>/dev/null | \
+		sed 's:.*/::' | sort -u | wc -l
+}
+
+# Fase di carica Victron (CS) con il nome usato in Dolibarr
+charge_state_name() {
+	case "$1" in
+		0) echo off ;;
+		2) echo fault ;;
+		3) echo bulk ;;
+		4) echo absorption ;;
+		5) echo float ;;
+		7) echo equalize ;;
+		245) echo starting ;;
+		252) echo external ;;
+	esac
 }
 
 . /etc/openwrt_release 2>/dev/null
@@ -136,6 +145,21 @@ if [ $(( $(date +%s) - T )) -lt 900 ]; then
 fi
 add_int last_capture_time "$(json_get "$CAPTURE" @.time)"
 add_str last_capture_file "$(json_get "$CAPTURE" @.file)"
+# Campi della 1.1 (contratto Dolibarr v2, modulo 1.2; il modulo 1.1 li
+# ignora): contatori della reflex e riassunto Victron
+add_str upload_target "$(wc_upload_target)"
+add_str camera_serial "$(counter_get serial)"
+add_int shutter_count "$(json_get "$WC_CAMERA_INFO" @.shutter_count)"
+add_int shots_total "$(counter_get shots_total)"
+S="$(counter_get power_on_s)"
+case "$S" in ''|*[!0-9]*) ;; *) add_num camera_hours "$(awk -v s="$S" 'BEGIN { printf "%.1f", s / 3600 }')" ;; esac
+add_int camera_power_cycles "$(counter_get power_cycles)"
+if [ "$WC_VICTRON" = 1 ] && wc_json_fresh "$WC_VICTRON_JSON" 900 >/dev/null; then
+	add_num battery_v "$(json_get "$WC_VICTRON_JSON" @.battery_v)"
+	add_num battery_soc "$(json_get "$WC_VICTRON_JSON" @.soc_pct)"
+	add_str charge_state "$(charge_state_name "$(json_get "$WC_VICTRON_JSON" @.charge_state)")"
+	add_int victron_error "$(json_get "$WC_VICTRON_JSON" @.error)"
+fi
 add_int time "$(date +%s)"
 DATA="$(json_dump)"
 
@@ -150,7 +174,7 @@ i=1
 while :; do
 	RES="$(printf '%s' "$DATA" | curl -sS -m 20 -w '\n%{http_code}' \
 		-H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
-		-H 'User-Agent: luci-app-webcam' --data-binary @- "$URL" 2>&1)"
+		-H "User-Agent: luci-app-webcam/$(wc_app_version)" --data-binary @- "$URL" 2>&1)"
 	CODE="$(echo "$RES" | tail -n 1)"
 	[ "$CODE" = 200 ] && exit 0
 	# Token o dati rifiutati: inutile riprovare

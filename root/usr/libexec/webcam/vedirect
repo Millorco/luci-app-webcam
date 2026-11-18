@@ -1,0 +1,212 @@
+#!/bin/sh
+# ---------------------------------------------------
+# Lettura di un Victron con il protocollo testo VE.Direct
+# (19200 baud 8N1, un blocco di righe "ETICHETTA<tab>VALORE" al secondo,
+# chiuso da "Checksum<tab><byte>": la somma dei byte del blocco è 0 mod 256).
+#
+# Uso:
+#   vedirect [-t secondi] PORTA_MPPT [PORTA_SHUNT]
+#       legge le porte (es. /dev/ttyUSB0, cavo VE.Direct-USB) e stampa
+#       l'oggetto "power" della telemetria (contratto telemetry/1)
+#   vedirect -f FILE_MPPT [FILE_SHUNT]
+#       stessa cosa da file già catturati (prove)
+#   vedirect -r PORTA|FILE
+#       stampa solo le etichette lette, una per riga (diagnostica)
+#
+# Regolatore MPPT (SmartSolar 75/15): V, I, VPV, PPV, CS, MPPT, OR, ERR,
+# LOAD, IL, H19-H23. SmartShunt facoltativo sulla seconda porta: SOC, V, I,
+# CE, TTG; se c'è, soc_pct viene da lì.
+# Esce con 1 senza stampare nulla se nessuna porta risponde. Non resta
+# mai bloccato: la lettura dura al massimo "secondi" (predefinito 3).
+# ---------------------------------------------------
+
+SECS=3
+FROM_FILE=0
+RAW=0
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-t) SECS="$2"; shift 2 ;;
+		-f) FROM_FILE=1; shift ;;
+		-r) RAW=1; shift ;;
+		-*) sed -n '3,20p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+		*) break ;;
+	esac
+done
+case "$SECS" in ''|*[!0-9]*|0) SECS=3 ;; esac
+[ -n "$1" ] || { sed -n '3,20p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+
+TMP="$(mktemp -d /tmp/vedirect.XXXXXX)" || exit 1
+trap 'rm -rf "$TMP"' EXIT INT TERM
+
+# Byte grezzi da una porta per SECS secondi (nessun blocco se non risponde)
+read_port() {
+	local port="$1" out="$2" pid lock
+	[ -c "$port" ] || return 1
+	lock="/var/lock/webcam_vedirect_$(echo "$port" | tr -c 'A-Za-z0-9\n' '_').lock"
+	mkdir "$lock" 2>/dev/null || {
+		[ $(( $(date +%s) - $(date -r "$lock" +%s 2>/dev/null || echo 0) )) -gt 60 ] || return 1
+	}
+	stty -F "$port" 19200 cs8 -parenb -cstopb -crtscts -ixon -ixoff clocal raw -echo 2>/dev/null || {
+		rmdir "$lock" 2>/dev/null
+		return 1
+	}
+	cat "$port" > "$out" 2>/dev/null &
+	pid=$!
+	sleep "$SECS"
+	kill "$pid" 2>/dev/null
+	wait "$pid" 2>/dev/null
+	rmdir "$lock" 2>/dev/null
+	[ -s "$out" ]
+}
+
+# Etichette dei blocchi con checksum giusto ("ETICHETTA=VALORE", l'ultimo
+# valore vince: BMV e SmartShunt alternano due blocchi diversi)
+parse() {
+	od -An -v -tu1 "$1" | tr -s ' \t' '\n\n' | grep -v '^$' | awk '
+	BEGIN { sum = 0; line = ""; ck = 0; n = 0; hex = 0 }
+	function flush() {
+		if (line != "" && substr(line, 1, 1) != ":") {
+			t = index(line, "\t")
+			if (t > 1) { n++; lab[n] = substr(line, 1, t - 1); val[n] = substr(line, t + 1) }
+		}
+		line = ""
+	}
+	{
+		b = $1 + 0
+		# Messaggi HEX asincroni (":...\n") tra i blocchi: fuori dalla somma
+		if (hex) { if (b == 10) hex = 0; next }
+		if (b == 58 && line == "" && !ck) { hex = 1; next }
+		sum = (sum + b) % 256
+		if (ck) {
+			if (sum == 0) for (i = 1; i <= n; i++) good[lab[i]] = val[i]
+			n = 0; sum = 0; line = ""; ck = 0
+			next
+		}
+		if (b == 13 || b == 10) { flush(); next }
+		if (b == 9 && line == "Checksum") { line = ""; ck = 1; next }
+		if (b == 9 || (b >= 32 && b < 127)) line = line sprintf("%c", b)
+		else line = line "?"
+	}
+	END { for (k in good) print k "=" good[k] }'
+}
+
+get() { sed -n "s/^$2=//p" "$1" | head -n 1; }
+
+# Numero intero valido, altrimenti vuoto
+int() { printf '%s' "$1" | grep -E '^-?[0-9]+$'; }
+
+# intero / divisore, con 2 o 3 decimali
+div() {
+	local v
+	v="$(int "$1")" || return 0
+	awk -v v="$v" -v d="$2" -v p="$3" 'BEGIN { s = sprintf("%." p "f", v / d); sub(/0+$/, "", s); sub(/\.$/, "", s); print s }'
+}
+
+mul() {
+	local v
+	v="$(int "$1")" || return 0
+	echo $(( v * $2 ))
+}
+
+num_or_null() { [ -n "$1" ] && echo "$1" || echo null; }
+
+str_or_null() {
+	if [ -n "$1" ]; then
+		printf '"%s"' "$(printf '%s' "$1" | tr -d '"\\' | cut -c1-32)"
+	else
+		echo null
+	fi
+}
+
+# FW: "164" -> "1.64"; altri formati (FWE, "0416FF") così come sono
+fw_ver() {
+	case "$1" in
+		[0-9][0-9][0-9]) echo "${1%??}.${1#?}" ;;
+		*) echo "$1" ;;
+	esac
+}
+
+pid_hex() {
+	printf '%s' "$1" | grep -Eq '^0[xX][0-9A-Fa-f]{4}$' && printf '0x%s' "$(printf '%s' "${1#??}" | tr 'a-f' 'A-F')"
+}
+
+load_on() {
+	case "$1" in ON) echo true ;; OFF) echo false ;; *) echo null ;; esac
+}
+
+M="$TMP/mppt.txt"
+S="$TMP/shunt.txt"
+: > "$M"
+: > "$S"
+
+[ "$RAW" = 1 ] && [ -f "$1" ] && FROM_FILE=1
+if [ "$FROM_FILE" = 1 ]; then
+	[ -s "$1" ] && parse "$1" > "$M"
+	[ -n "$2" ] && [ -s "$2" ] && parse "$2" > "$S"
+else
+	read_port "$1" "$TMP/mppt.raw" && parse "$TMP/mppt.raw" > "$M"
+	[ -n "$2" ] && read_port "$2" "$TMP/shunt.raw" && parse "$TMP/shunt.raw" > "$S"
+fi
+
+if [ "$RAW" = 1 ]; then
+	cat "$M"
+	[ -s "$M" ]
+	exit
+fi
+
+[ -s "$M" ] || [ -s "$S" ] || exit 1
+
+JO=""
+jkv() { JO="${JO:+$JO,}\"$1\":$2"; }
+
+jkv time "$(date +%s)"
+jkv source '"vedirect"'
+if [ -s "$M" ]; then
+	jkv product_id "$(str_or_null "$(pid_hex "$(get "$M" PID)")")"
+	jkv serial "$(str_or_null "$(get "$M" 'SER#')")"
+	jkv firmware "$(str_or_null "$(fw_ver "$(get "$M" FW)")")"
+	jkv battery_v "$(num_or_null "$(div "$(get "$M" V)" 1000 3)")"
+	jkv battery_a "$(num_or_null "$(div "$(get "$M" I)" 1000 3)")"
+	jkv panel_v "$(num_or_null "$(div "$(get "$M" VPV)" 1000 3)")"
+	jkv panel_w "$(num_or_null "$(int "$(get "$M" PPV)")")"
+	jkv load_a "$(num_or_null "$(div "$(get "$M" IL)" 1000 3)")"
+	jkv load_on "$(load_on "$(get "$M" LOAD)")"
+	jkv charge_state "$(num_or_null "$(int "$(get "$M" CS)")")"
+	jkv mppt_state "$(num_or_null "$(int "$(get "$M" MPPT)")")"
+	jkv off_reason "$(str_or_null "$(get "$M" OR)")"
+	jkv error "$(num_or_null "$(int "$(get "$M" ERR)")")"
+	jkv yield_today_wh "$(num_or_null "$(mul "$(get "$M" H20)" 10)")"
+	jkv yield_total_wh "$(num_or_null "$(mul "$(get "$M" H19)" 10)")"
+	jkv max_power_today_w "$(num_or_null "$(int "$(get "$M" H21)")")"
+	jkv yield_yesterday_wh "$(num_or_null "$(mul "$(get "$M" H22)" 10)")"
+	jkv max_power_yesterday_w "$(num_or_null "$(int "$(get "$M" H23)")")"
+fi
+
+# SmartShunt / BMV: percentuale di carica (SOC in decimi di %)
+SOC=""
+[ -s "$S" ] && SOC="$(div "$(get "$S" SOC)" 10 1)"
+[ -s "$M" ] && [ -z "$SOC" ] && SOC="$(div "$(get "$M" SOC)" 10 1)"
+jkv soc_pct "$(num_or_null "$SOC")"
+
+if [ -s "$S" ]; then
+	# Senza MPPT la tensione della batteria viene dallo shunt
+	if [ ! -s "$M" ]; then
+		jkv battery_v "$(num_or_null "$(div "$(get "$S" V)" 1000 3)")"
+		jkv battery_a "$(num_or_null "$(div "$(get "$S" I)" 1000 3)")"
+	fi
+	TTG="$(int "$(get "$S" TTG)")"
+	[ "$TTG" = -1 ] && TTG=""
+	SJ=""
+	SJ="\"product_id\":$(str_or_null "$(pid_hex "$(get "$S" PID)")")"
+	SJ="$SJ,\"serial\":$(str_or_null "$(get "$S" 'SER#')")"
+	SJ="$SJ,\"battery_v\":$(num_or_null "$(div "$(get "$S" V)" 1000 3)")"
+	SJ="$SJ,\"battery_a\":$(num_or_null "$(div "$(get "$S" I)" 1000 3)")"
+	SJ="$SJ,\"soc_pct\":$(num_or_null "$(div "$(get "$S" SOC)" 10 1)")"
+	SJ="$SJ,\"consumed_ah\":$(num_or_null "$(div "$(get "$S" CE)" 1000 3)")"
+	SJ="$SJ,\"ttg_min\":$(num_or_null "$TTG")"
+	SJ="$SJ,\"alarm\":$(load_on "$(get "$S" Alarm)")"
+	jkv shunt "{$SJ}"
+fi
+
+echo "{$JO}"
+exit 0
