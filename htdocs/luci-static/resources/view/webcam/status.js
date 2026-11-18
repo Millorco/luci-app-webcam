@@ -159,7 +159,10 @@ return view.extend({
 					rows.push(row(_('Outside dew point'), fmtTemp(st.dewpoint_ext, scale)));
 				}
 				rows.push(row(_('Automatic heating'), st.heating_enabled ? _('Enabled') : _('Disabled')));
-				rows.push(row(_('Heater'), st.heater ? _('On') : _('Off')));
+				rows.push(row(_('Heater'), self.heaterCell(st)));
+				if (st.heater_duty_pct !== null && st.heater_duty_pct !== undefined)
+					rows.push(row(_('Heater in the last hour'), _('on %d%% of the time').format(st.heater_duty_pct)));
+				rows.push(row(_('Heater boost'), self.boostCell(st)));
 				rows.push(row(_('Last reading'), fmtTime(st.time)));
 			} else {
 				rows.push(row(_('Sensor'), _('No data yet (updated every 5 minutes)')));
@@ -223,6 +226,34 @@ return view.extend({
 			container.innerHTML = '';
 			container.appendChild(E('table', { 'class': 'table' }, rows));
 		});
+	},
+
+	heaterCell: function(st) {
+		var reasons = {
+			dewpoint: _('close to the dew point'),
+			min_temp: _('below the minimum temperature'),
+			boost: _('boost requested by the portal')
+		};
+		var text = st.heater ? _('On') : _('Off');
+
+		if (st.heat_reason === 'capture')
+			return _('Off during the shot');
+
+		if (st.heat_reason && reasons[st.heat_reason])
+			text += ' - ' + reasons[st.heat_reason];
+		if (st.heater && st.heater_on_since)
+			text += ' - ' + _('since %s').format(fmtTime(st.heater_on_since));
+		return text;
+	},
+
+	// Boost del comando heater.boost (ora di fine del router)
+	boostCell: function(st) {
+		if (!st.heater_boost_until || (st.time && st.heater_boost_until <= st.time))
+			return _('No');
+		if (st.heat_reason !== 'boost' && st.heat_reason !== 'capture')
+			return E('span', { 'style': 'color:#c60' },
+				_('Requested until %s, held back by the heating protections (sensor or temperature)').format(fmtTime(st.heater_boost_until)));
+		return E('strong', {}, _('Active until %s').format(fmtTime(st.heater_boost_until)));
 	},
 
 	updateCheckCell: function(upd) {
