@@ -1,0 +1,532 @@
+#!/bin/sh
+# ---------------------------------------------------
+# Comandi del portal al router (contratto 1.1, command/1).
+#
+# Il router sta dietro il 4G e non è raggiungibile: i comandi arrivano
+# nelle risposte di POST /api/v1/photo, /telemetry, /event e di
+# GET /api/v1/commands. common.sh (wc_portal_call) copia ogni risposta
+# che li contiene in /tmp/webcam/commands_inbox/ e avvia "commands --run".
+#
+# Uso:
+#   commands --run        esegue i comandi arrivati, uno alla volta
+#   commands --poll       GET /api/v1/commands subito (pulsante della
+#                         LuCI); stampa una riga con l'esito
+#   commands --due        da cron ogni minuto: GET /api/v1/commands se il
+#                         portal l'ha chiesto con poll_after, e fine del
+#                         boost del riscaldamento appena scade
+#   commands --schedule S GET /api/v1/commands tra S secondi (avvio)
+#
+# Lista chiusa, controllata qui e non presa dal portal: heater.boost,
+# heater.cancel, capture.now, telemetry.flush, config.set su 7 opzioni.
+# Tutto il resto è rifiutato. Ogni comando ha la sua conferma (evento
+# command.ack, subito) e la sua riga di log. Un id già eseguito (ultimi
+# 2 giorni, /tmp/webcam/commands_done) non si riesegue: si rimanda la
+# stessa conferma. Un comando scaduto non si esegue.
+# Con webcam.@server[0].commands = 0 il router non chiede comandi.
+# Ultimi 30 comandi per la LuCI: /tmp/webcam/commands_history.jsonl.
+# ---------------------------------------------------
+
+STATE=/tmp/webcam
+POLL_AT="$STATE/commands_poll_at"        # uptime della prossima richiesta
+BOOST_FILE="$STATE/heater_boost_until"   # fine del boost (ora Unix)
+
+# Controllo veloce da cron, senza leggere la configurazione
+if [ "$1" = --due ]; then
+	up="$(cut -d. -f1 /proc/uptime)"
+	at="$(cat "$POLL_AT" 2>/dev/null)"
+	until="$(cat "$BOOST_FILE" 2>/dev/null)"
+	due=0
+	boost_end=0
+	case "$at" in ''|*[!0-9]*) ;; *) [ "$up" -ge "$at" ] && due=1 ;; esac
+	case "$until" in ''|*[!0-9]*) ;; *) [ "$(date +%s)" -ge "$until" ] && boost_end=1 ;; esac
+	[ "$due" = 1 ] || [ "$boost_end" = 1 ] || exit 0
+fi
+
+. /usr/bin/webcam.cfg
+. /usr/libexec/webcam/common.sh
+
+LOGTAG="$WC_NAME commands"
+INBOX="$WC_COMMANDS_INBOX"
+DONE="$STATE/commands_done"
+HISTORY="$STATE/commands_history.jsonl"
+LAST_CAPTURE="$STATE/commands_last_capture"
+LOCK=/var/lock/webcam_commands.lock
+CAPTURE_LOCK=/var/lock/webcam_capture.lock
+TELEMETRY_SEND_LOCK=/var/lock/webcam_telemetry_send.lock
+EVENT=/usr/libexec/webcam/event
+CLIMATE=/usr/bin/climate
+
+MAX_PER_RESPONSE=5      # contratto: al massimo 5 comandi per risposta
+DONE_KEEP_S=172800      # id eseguiti ricordati per 2 giorni
+DONE_MAX=500
+HISTORY_MAX=30
+ACK_REPEAT_S=60         # stessa conferma al più una volta al minuto
+BOOST_MIN_S=300
+BOOST_MAX_S=3600
+CAPTURE_EVERY_S=600     # capture.now: al più uno ogni 10 minuti
+CAPTURE_WAIT_S=300      # attesa dello scatto in corso prima di "busy"
+FLUSH_WAIT_S=120        # attesa dell'invio della telemetria in corso
+BOOST_MAX_TEMP=40       # come climate: niente boost oltre 40 °C interni
+
+log() {
+	case "$1" in
+		ERRORE*) logger -p user.err -t "$LOGTAG" "$@" ;;
+		ATTENZIONE*) logger -p user.warning -t "$LOGTAG" "$@" ;;
+		OK*) logger -p user.info -t "$LOGTAG" "$@" ;;
+		*) logger -t "$LOGTAG" "$@" ;;
+	esac
+}
+
+mkdir -p "$STATE"
+
+# ---------------------------------------------------
+# Lettura della risposta (jsonfilter di OpenWrt)
+# ---------------------------------------------------
+F=""
+jf() { jsonfilter -i "$F" -e "$1" 2>/dev/null | head -n 1; }
+jt() { jsonfilter -i "$F" -t -e "$1" 2>/dev/null | head -n 1; }
+# Numero di membri di un oggetto (o elementi di un array)
+jn() { jsonfilter -i "$F" -e "$1[*]" 2>/dev/null | wc -l | tr -d ' '; }
+
+is_uint() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; return 0; }
+
+# Ora del portal adesso: ora del router se sincronizzata con NTP,
+# altrimenti server_time della risposta più il tempo passato da allora
+portal_now() {
+	local st="$1" recv_up="$2"
+	if [ -f "$WC_NTP_FLAG" ] || ! is_uint "$st"; then
+		date +%s
+	else
+		echo $(( st + $(wc_uptime) - recv_up ))
+	fi
+}
+
+hhmm() { date -d "@$1" +%H:%M 2>/dev/null; }
+
+# ---------------------------------------------------
+# Conferme, id già eseguiti, storico per la LuCI
+# ---------------------------------------------------
+
+# Riga di commands_done: id <TAB> ora <TAB> ultima conferma <TAB> gravità
+# <TAB> messaggio <TAB> data (JSON)
+done_line() { grep "^$1	" "$DONE" 2>/dev/null | tail -n 1; }
+
+done_prune() {
+	local now
+	now="$(date +%s)"
+	[ -f "$DONE" ] || return 0
+	awk -F '\t' -v now="$now" -v keep="$DONE_KEEP_S" '$2 + keep >= now || $2 > now' "$DONE" | \
+		tail -n "$DONE_MAX" > "$DONE.tmp" && mv "$DONE.tmp" "$DONE"
+}
+
+history_add() {
+	[ -f "$HISTORY" ] && tail -n $(( HISTORY_MAX - 1 )) "$HISTORY" > "$HISTORY.tmp"
+	printf '%s\n' "$1" >> "$HISTORY.tmp"
+	mv "$HISTORY.tmp" "$HISTORY"
+}
+
+# ack ID TIPO STATO MOTIVO RISULTATO_JSON MESSAGGIO
+ack() {
+	local id="$1" type="$2" status="$3" reason="$4" result="${5:-null}" msg="$6" sev=info data now
+	[ "$status" = "done" ] || sev=warning
+	now="$(date +%s)"
+	data="{\"command_id\":$(json_str "$id"),\"type\":$(json_str "$(printf '%s' "$type" | cut -c1-32)"),\"status\":\"$status\",\"reason\":$(json_str "$reason"),\"result\":$result}"
+	msg="$(printf '%s' "$msg" | tr '\t\n' '  ' | cut -c1-300)"
+	if [ "$status" = "done" ]; then
+		log "OK comando $id $type: $msg"
+	else
+		log "ATTENZIONE: comando $id $type non eseguito ($status${reason:+, $reason}): $msg"
+	fi
+	"$EVENT" command.ack "$sev" "$msg" "$data" </dev/null >/dev/null 2>&1
+	printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$now" "$now" "$sev" "$msg" "$data" >> "$DONE"
+	history_add "{\"id\":$(json_str "$id"),\"type\":$(json_str "$(printf '%s' "$type" | cut -c1-32)"),\"received\":$RECEIVED,\"time\":$now,\"status\":\"$status\",\"reason\":$(json_str "$reason"),\"result\":$result,\"message\":$(json_str "$msg"),\"origin\":$(json_str "$ORIGIN"),\"note\":$(json_str "$CMD_REASON")}"
+}
+
+# Comando già eseguito: stessa conferma, al più una volta al minuto
+ack_again() {
+	local line="$1" id last sev msg data now
+	id="$(printf '%s' "$line" | cut -f1)"
+	last="$(printf '%s' "$line" | cut -f3)"
+	sev="$(printf '%s' "$line" | cut -f4)"
+	msg="$(printf '%s' "$line" | cut -f5)"
+	data="$(printf '%s' "$line" | cut -f6-)"
+	now="$(date +%s)"
+	is_uint "$last" || last=0
+	if [ $(( now - last )) -lt "$ACK_REPEAT_S" ] && [ "$now" -ge "$last" ]; then
+		log "Comando $id già eseguito e confermato da poco: ignorato."
+		return 0
+	fi
+	log "Comando $id già eseguito: rimando la stessa conferma."
+	"$EVENT" command.ack "$sev" "$msg" "$data" </dev/null >/dev/null 2>&1
+	awk -F '\t' -v OFS='\t' -v id="$id" -v now="$now" '$1 == id { $3 = now } { print }' "$DONE" > "$DONE.tmp" && \
+		mv "$DONE.tmp" "$DONE"
+}
+
+# ---------------------------------------------------
+# Tipi di comando
+# ---------------------------------------------------
+
+climate_value() { wc_jget "$STATE/status.json" "$1"; }
+
+cmd_heater_boost() {
+	local p="$1" dur t until now
+	[ "$(jn "$p")" = 1 ] && [ "$(jt "$p.duration_s")" = int ] || {
+		ack "$ID" "$TYPE" rejected invalid_params null "parametri non validi: serve solo duration_s (intero)"; return; }
+	dur="$(jf "$p.duration_s")"
+	if ! is_uint "$dur" || [ "$dur" -lt "$BOOST_MIN_S" ] || [ "$dur" -gt "$BOOST_MAX_S" ]; then
+		ack "$ID" "$TYPE" rejected invalid_params null "durata $dur s fuori intervallo ($BOOST_MIN_S-$BOOST_MAX_S)"
+		return
+	fi
+	if [ "$WC_HEATING" != 1 ]; then
+		ack "$ID" "$TYPE" rejected heating_disabled null "riscaldamento automatico disattivato (heating = 0)"
+		return
+	fi
+	# Protezioni del riscaldamento (le stesse valgono in climate per tutta
+	# la durata del boost; la scheda spegne comunque oltre 45 °C)
+	if [ "$(climate_value sensor_ok)" != true ]; then
+		ack "$ID" "$TYPE" rejected error null "sensore interno non disponibile: il riscaldamento non si accende senza controllo della temperatura"
+		return
+	fi
+	t="$(climate_value temperature)"
+	if [ -n "$t" ] && awk -v t="$t" -v m="$BOOST_MAX_TEMP" 'BEGIN { exit !(t >= m) }'; then
+		ack "$ID" "$TYPE" rejected error null "temperatura interna $t °C oltre il limite di $BOOST_MAX_TEMP °C"
+		return
+	fi
+	now="$(date +%s)"
+	until=$(( now + dur ))
+	echo "$until" > "$BOOST_FILE.tmp" && mv "$BOOST_FILE.tmp" "$BOOST_FILE"
+	log "Boost del riscaldamento per $dur s (fino alle $(hhmm "$until"))${CMD_REASON:+, motivo: $CMD_REASON}"
+	"$CLIMATE" --now </dev/null >/dev/null 2>&1
+	if [ ! -f "$BOOST_FILE" ]; then
+		ack "$ID" "$TYPE" failed error null "climate ha annullato il boost (protezione del riscaldamento)"
+		return
+	fi
+	case "$(climate_value heat_reason)" in
+		capture) ack "$ID" "$TYPE" "done" '' "{\"until\":$until}" "riscaldamento acceso fino alle $(hhmm "$until") (dopo lo scatto in corso)" ;;
+		*) ack "$ID" "$TYPE" "done" '' "{\"until\":$until}" "riscaldamento acceso fino alle $(hhmm "$until")" ;;
+	esac
+}
+
+cmd_heater_cancel() {
+	local p="$1" was=false
+	[ "$(jn "$p")" = 0 ] || { ack "$ID" "$TYPE" rejected invalid_params null "heater.cancel non ha parametri"; return; }
+	if [ -f "$BOOST_FILE" ]; then
+		was=true
+		rm -f "$BOOST_FILE"
+		log "Boost del riscaldamento annullato${CMD_REASON:+, motivo: $CMD_REASON}"
+		"$CLIMATE" --now </dev/null >/dev/null 2>&1
+	fi
+	ack "$ID" "$TYPE" "done" '' "{\"was_active\":$was}" "$( [ "$was" = true ] && echo "boost annullato, riscaldamento alla logica normale" || echo "nessun boost in corso")"
+}
+
+# Aspetta fino a $2 secondi che la cartella di lock $1 sparisca
+wait_unlocked() {
+	local i=0
+	while [ -d "$1" ] && [ "$i" -lt "$2" ]; do
+		sleep 5
+		i=$(( i + 5 ))
+	done
+	[ ! -d "$1" ]
+}
+
+cmd_capture_now() {
+	local p="$1" n upload=true last now rc file res arg=""
+	n="$(jn "$p")"
+	case "$n" in
+		0) ;;
+		1) [ "$(jt "$p.upload")" = boolean ] || { ack "$ID" "$TYPE" rejected invalid_params null "parametri non validi: solo upload (booleano)"; return; }
+		   upload="$(jf "$p.upload")" ;;
+		*) ack "$ID" "$TYPE" rejected invalid_params null "parametri non validi: solo upload (booleano)"; return ;;
+	esac
+	[ "$upload" = false ] && arg=--no-upload
+	now="$(date +%s)"
+	last="$(cat "$LAST_CAPTURE" 2>/dev/null)"
+	if is_uint "$last" && [ "$now" -ge "$last" ] && [ $(( now - last )) -lt "$CAPTURE_EVERY_S" ]; then
+		ack "$ID" "$TYPE" rejected rate_limited null "ultimo scatto comandato $(( now - last )) s fa (minimo $CAPTURE_EVERY_S s)"
+		return
+	fi
+	# Lo scatto programmato che ha portato il comando sta ancora caricando
+	if ! wait_unlocked "$CAPTURE_LOCK" "$CAPTURE_WAIT_S"; then
+		ack "$ID" "$TYPE" rejected busy null "uno scatto è in corso"
+		return
+	fi
+	echo "$now" > "$LAST_CAPTURE"
+	log "Scatto comandato dal portal$( [ -n "$arg" ] && echo " (senza upload)")${CMD_REASON:+, motivo: $CMD_REASON}"
+	/usr/bin/capture $arg </dev/null >/dev/null 2>&1
+	rc=$?
+	file="$(wc_jget "$STATE/capture.json" file)"
+	res="$(wc_jget "$STATE/capture.json" result)"
+	case "$rc" in
+		0) ack "$ID" "$TYPE" "done" '' "{\"file\":$(json_str "$file"),\"upload\":$upload}" "scatto $file: ${res:-ok}" ;;
+		3) rm -f "$LAST_CAPTURE"; ack "$ID" "$TYPE" rejected busy null "uno scatto è in corso" ;;
+		*) ack "$ID" "$TYPE" failed error "{\"file\":$(json_str "$file"),\"upload\":$upload}" "scatto non riuscito: ${res:-codice $rc}" ;;
+	esac
+}
+
+cmd_telemetry_flush() {
+	local p="$1" start t code sent res
+	[ "$(jn "$p")" = 0 ] || { ack "$ID" "$TYPE" rejected invalid_params null "telemetry.flush non ha parametri"; return; }
+	if [ "$WC_TELEMETRY" != 1 ]; then
+		ack "$ID" "$TYPE" rejected not_allowed null "telemetria disattivata sul router"
+		return
+	fi
+	if ! wait_unlocked "$TELEMETRY_SEND_LOCK" "$FLUSH_WAIT_S"; then
+		ack "$ID" "$TYPE" rejected busy null "un invio della telemetria è già in corso"
+		return
+	fi
+	start="$(date +%s)"
+	/usr/bin/telemetry_sample </dev/null >/dev/null 2>&1
+	/usr/bin/telemetry_send </dev/null >/dev/null 2>&1
+	t="$(wc_jget "$STATE/telemetry_status.json" time)"
+	code="$(wc_jget "$STATE/telemetry_status.json" code)"
+	sent="$(wc_jget "$STATE/telemetry_status.json" last_sent)"
+	res="$(wc_jget "$STATE/telemetry_status.json" result)"
+	if ! is_uint "$t" || [ "$t" -lt "$start" ]; then
+		ack "$ID" "$TYPE" rejected busy null "un invio della telemetria è già in corso"
+	elif [ "$code" = 200 ] || [ "$code" = 201 ]; then
+		ack "$ID" "$TYPE" "done" '' "{\"sent\":$(json_int "$sent")}" "telemetria inviata: $res"
+	elif [ -z "$code" ] || [ "$code" = null ]; then
+		ack "$ID" "$TYPE" "done" '' '{"sent":0}' "nessun campione da inviare"
+	else
+		ack "$ID" "$TYPE" failed error null "invio della telemetria non riuscito: $res"
+	fi
+}
+
+# Chiavi ammesse da config.set: lista scritta qui, non presa dal portal.
+# Stampa "sezione opzione" o niente.
+config_key() {
+	case "$1" in
+		general.heating|general.heat_fan|general.maintenance_mode|\
+		general.heat_dewpoint_margin|general.heat_hysteresis|general.heat_min_temp|\
+		shooting.photo_time_lapse)
+			echo "${1%%.*} ${1#*.}" ;;
+	esac
+}
+
+# Valore ammesso per la chiave? (pattern di comando-v1.schema.json e
+# intervalli di api-portal-v1.md)
+config_value_ok() {
+	local key="$1" v="$2"
+	[ "${#v}" -le 8 ] || return 1
+	case "$key" in
+		general.heating|general.heat_fan|general.maintenance_mode)
+			[ "$v" = 0 ] || [ "$v" = 1 ] ;;
+		general.heat_dewpoint_margin)
+			printf '%s' "$v" | grep -Eq '^([1-9]|10)(\.[0-9])?$' && \
+				awk -v v="$v" 'BEGIN { exit !(v >= 1 && v <= 10) }' ;;
+		general.heat_hysteresis)
+			printf '%s' "$v" | grep -Eq '^[0-5](\.[0-9])?$' && \
+				awk -v v="$v" 'BEGIN { exit !(v >= 0 && v <= 5) }' ;;
+		general.heat_min_temp)
+			printf '%s' "$v" | grep -Eq '^-?[0-9]{1,2}(\.[0-9])?$' && \
+				awk -v v="$v" 'BEGIN { exit !(v >= -10 && v <= 15) }' ;;
+		shooting.photo_time_lapse)
+			printf '%s' "$v" | grep -Eq '^([1-9]|[1-5][0-9]|60)$' ;;
+		*) return 1 ;;
+	esac
+}
+
+cmd_config_set() {
+	local p="$1" key value sk sec opt old
+	if [ "$(jn "$p")" != 2 ] || [ "$(jt "$p.key")" != string ] || [ "$(jt "$p.value")" != string ]; then
+		ack "$ID" "$TYPE" rejected invalid_params null "parametri non validi: servono solo key e value (stringhe)"
+		return
+	fi
+	key="$(jf "$p.key")"
+	value="$(jf "$p.value")"
+	sk="$(config_key "$key")"
+	if [ -z "$sk" ]; then
+		ack "$ID" "$TYPE" rejected not_allowed null "opzione $(printf '%s' "$key" | cut -c1-60) non modificabile dal portal"
+		return
+	fi
+	if ! config_value_ok "$key" "$value"; then
+		ack "$ID" "$TYPE" rejected invalid_params null "valore di $key fuori intervallo: $(printf '%s' "$value" | cut -c1-20)"
+		return
+	fi
+	sec="${sk% *}"
+	opt="${sk#* }"
+	old="$(uci -q get "webcam.@${sec}[0].$opt")"
+	if ! uci -q set "webcam.@${sec}[0].$opt=$value" || ! uci -q commit webcam; then
+		ack "$ID" "$TYPE" failed error null "uci set di $key non riuscito"
+		return
+	fi
+	log "Configurazione cambiata dal portal: $key $old -> $value${CMD_REASON:+, motivo: $CMD_REASON}"
+	"$EVENT" config.change info "Configurazione cambiata dal portal ($ID): $key" \
+		"{\"section\":$(json_str "$sec"),\"keys\":[$(json_str "$opt")],\"source\":\"portal\",\"command_id\":$(json_str "$ID")}" \
+		</dev/null >/dev/null 2>&1
+	# Il riscaldamento segue subito; maintenance_mode e photo_time_lapse
+	# valgono dal prossimo giro di capture_service
+	case "$key" in general.heat*) "$CLIMATE" --now </dev/null >/dev/null 2>&1 ;; esac
+	ack "$ID" "$TYPE" "done" '' "{\"key\":$(json_str "$key"),\"old\":$(json_str "$old"),\"new\":$(json_str "$value")}" \
+		"$key: ${old:-(vuoto)} -> $value"
+}
+
+# ---------------------------------------------------
+# Un comando: indice $1 nella risposta $F
+# ---------------------------------------------------
+handle_command() {
+	local c="@.commands[$1]" line exp now
+	ID=""; TYPE=""; CMD_REASON=""
+
+	if [ "$(jt "$c")" != object ]; then
+		log "ATTENZIONE: comando $1 della risposta non è un oggetto: ignorato."
+		return
+	fi
+	ID="$(jf "$c.id")"
+	if ! printf '%s' "$ID" | grep -Eq '^cmd-[0-9]{1,18}$'; then
+		log "ATTENZIONE: comando senza id valido ($(printf '%s' "$ID" | cut -c1-40)): ignorato, non si può confermare."
+		return
+	fi
+	TYPE="$(jf "$c.type")"
+	[ "$(jt "$c.reason")" = string ] && CMD_REASON="$(jf "$c.reason" | tr -d '\000-\037' | cut -c1-120)"
+
+	line="$(done_line "$ID")"
+	if [ -n "$line" ]; then
+		ack_again "$line"
+		return
+	fi
+
+	if [ "$(jf "$c.schema")" != command/1 ]; then
+		ack "$ID" "$TYPE" rejected invalid_params null "schema non supportato: $(jf "$c.schema" | cut -c1-20)"
+		return
+	fi
+	case "$TYPE" in
+		heater.boost|heater.cancel|capture.now|telemetry.flush|config.set) ;;
+		*) ack "$ID" "$TYPE" rejected unknown_type null "tipo di comando sconosciuto: $(printf '%s' "$TYPE" | cut -c1-32)"; return ;;
+	esac
+
+	exp="$(jf "$c.expires_at")"
+	if [ "$(jt "$c.expires_at")" != int ] || [ "$(jt "$c.created_at")" != int ] || ! is_uint "$exp"; then
+		ack "$ID" "$TYPE" rejected invalid_params null "created_at o expires_at mancanti"
+		return
+	fi
+	now="$(portal_now "$SERVER_TIME" "$RECV_UP")"
+	if [ "$exp" -le "$now" ]; then
+		ack "$ID" "$TYPE" expired expired null "scaduto da $(( now - exp )) s"
+		return
+	fi
+	if [ "$(jt "$c.params")" != object ]; then
+		ack "$ID" "$TYPE" rejected invalid_params null "params mancante o non è un oggetto"
+		return
+	fi
+
+	log "Comando $ID $TYPE ricevuto (${ORIGIN:-?})${CMD_REASON:+, motivo: $CMD_REASON}"
+	case "$TYPE" in
+		heater.boost) cmd_heater_boost "$c.params" ;;
+		heater.cancel) cmd_heater_cancel "$c.params" ;;
+		capture.now) cmd_capture_now "$c.params" ;;
+		telemetry.flush) cmd_telemetry_flush "$c.params" ;;
+		config.set) cmd_config_set "$c.params" ;;
+	esac
+}
+
+# Una risposta del portal arrivata nell'inbox
+handle_file() {
+	local i n pa up
+	F="$1"
+	RECV_UP="$(basename "$F" | sed 's/-.*//; s/^0*//')"
+	RECV_UP=$(( ${RECV_UP:-0} / 100 ))
+	SERVER_TIME="$(jf '@.server_time')"
+	RECEIVED="$(date +%s)"
+	ORIGIN="$(basename "$F" .json | cut -d- -f3)"
+
+	# poll_after: prossima GET /api/v1/commands (assente = nessuna)
+	pa="$(jf '@.poll_after')"
+	up="$(wc_uptime)"
+	if [ "$(jt '@.poll_after')" = int ] && is_uint "$pa"; then
+		[ "$pa" -lt 30 ] && pa=30
+		[ "$pa" -gt 3600 ] && pa=3600
+		echo $(( up + pa )) > "$POLL_AT"
+	else
+		rm -f "$POLL_AT"
+	fi
+
+	if [ "$(jt '@.commands')" = array ]; then
+		n="$(jn '@.commands')"
+		if [ "$n" -gt "$MAX_PER_RESPONSE" ]; then
+			log "ATTENZIONE: il portal ha mandato $n comandi in una risposta: eseguo solo i primi $MAX_PER_RESPONSE."
+			n="$MAX_PER_RESPONSE"
+		fi
+		i=0
+		while [ "$i" -lt "$n" ]; do
+			handle_command "$i"
+			i=$(( i + 1 ))
+		done
+	fi
+	rm -f "$F"
+}
+
+run_inbox() {
+	local f any
+	while :; do
+		wc_lock "$LOCK" 3600 0 || return 0
+		trap 'wc_unlock "$LOCK"' EXIT INT TERM
+		done_prune
+		any=0
+		while :; do
+			f="$(ls "$INBOX"/*.json 2>/dev/null | sort | head -n 1)"
+			[ -n "$f" ] || break
+			handle_file "$f"
+			any=1
+		done
+		# Conferme rimaste in coda perché un altro invio era in corso
+		[ "$any" = 1 ] && "$EVENT" --send 60 </dev/null >/dev/null 2>&1
+		wc_unlock "$LOCK"
+		trap - EXIT INT TERM
+		# Arrivato qualcosa mentre si chiudeva? (la risposta alle conferme)
+		ls "$INBOX"/*.json >/dev/null 2>&1 || return 0
+	done
+}
+
+poll() {
+	local tmp code wait
+	wc_portal_enabled || { echo "Portal non configurato."; return 1; }
+	[ "$WC_COMMANDS" = 0 ] && { echo "Comandi dal portal disattivati (commands = 0)."; return 1; }
+	wait="$(wc_portal_wait_left)"
+	if [ "$wait" -gt 0 ]; then
+		echo "Il portal ha chiesto di aspettare ancora $wait s."
+		return 1
+	fi
+	tmp="$(mktemp /tmp/webcam_commands.XXXXXX)" || return 1
+	code="$(wc_portal_call /api/v1/commands "$tmp" -m 60)"
+	case "$code" in
+		200|201)
+			echo "OK: $(jsonfilter -i "$tmp" -e '@.commands[*].id' 2>/dev/null | wc -l | tr -d ' ') comandi dal portal."
+			rm -f "$tmp" "$tmp.hdr" "$tmp.err"
+			return 0
+			;;
+		429) wc_portal_set_retry "$tmp.hdr" ;;
+	esac
+	echo "Errore: $(wc_portal_reason "$code" "$tmp")"
+	log "ATTENZIONE: richiesta dei comandi al portal non riuscita: $(wc_portal_reason "$code" "$tmp")"
+	rm -f "$tmp" "$tmp.hdr" "$tmp.err"
+	return 1
+}
+
+case "$1" in
+	--run)
+		run_inbox
+		;;
+	--poll)
+		poll
+		exit $?
+		;;
+	--due)
+		if [ "$boost_end" = 1 ]; then
+			"$CLIMATE" --now </dev/null >/dev/null 2>&1
+		fi
+		if [ "$due" = 1 ]; then
+			rm -f "$POLL_AT"
+			poll >/dev/null
+		fi
+		;;
+	--schedule)
+		is_uint "$2" || { echo "Uso: $0 --schedule SECONDI" >&2; exit 2; }
+		echo $(( $(wc_uptime) + $2 )) > "$POLL_AT"
+		;;
+	*)
+		sed -n '3,25p' "$0" | sed 's/^# \{0,1\}//' >&2
+		exit 2
+		;;
+esac
+exit 0

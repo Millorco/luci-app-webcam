@@ -32,6 +32,9 @@
         ],
         "/tmp/webcam/camera_info.json": [
           "read"
+        ],
+        "/tmp/webcam/commands_history.jsonl": [
+          "read"
         ]
       },
       "uci": [
@@ -56,6 +59,9 @@
           "exec"
         ],
         "/usr/bin/portal_check": [
+          "exec"
+        ],
+        "/usr/libexec/webcam/commands --poll": [
           "exec"
         ]
       }

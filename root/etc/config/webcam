@@ -68,6 +68,9 @@ config server 'server'
         # portal_url è impostato, altrimenti ftp
         option upload_target ''
         option telemetry '1'
+        # Comandi dal portal (riscaldamento, scatto, invio telemetria,
+        # 7 opzioni): 0 = il router non li chiede e non li esegue
+        option commands '1'
 
 # Fasce orarie con un intervallo di scatto diverso (es. Capodanno).
 # date: vuoto = ogni giorno, MM-GG = ogni anno, AAAA-MM-GG = una volta;

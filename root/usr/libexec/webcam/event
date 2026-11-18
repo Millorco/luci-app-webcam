@@ -6,8 +6,10 @@
 #   event TIPO GRAVITÀ MESSAGGIO [DATI_JSON]
 #       mette l'evento in coda e prova subito a mandarlo
 #       (es. event camera.error error "scatto fallito" '{"file":"raw_...jpg"}')
-#   event --send
-#       manda la coda (anche da telemetry_send ogni 30 minuti)
+#   event --send [SECONDI]
+#       manda la coda (anche da telemetry_send ogni 30 minuti); con
+#       SECONDI aspetta fino a tanto se un altro invio è in corso (le
+#       conferme dei comandi del portal non devono aspettare 30 minuti)
 #   event --print
 #       stampa il lotto che verrebbe mandato, senza inviarlo
 #
@@ -106,9 +108,10 @@ build_batch() {
 }
 
 send_queue() {
-	local tmp n code reason wait last_ok rounds=0
+	local tmp n code reason wait last_ok rounds=0 lock_wait="${1:-0}"
 
-	wc_lock "$SEND_LOCK" 300 0 || exit 0
+	case "$lock_wait" in ''|*[!0-9]*) lock_wait=0 ;; esac
+	wc_lock "$SEND_LOCK" 300 "$lock_wait" || exit 0
 	tmp="$(mktemp -d /tmp/webcam_event.XXXXXX)" || { wc_unlock "$SEND_LOCK"; exit 1; }
 	trap 'rm -rf "$tmp"; wc_unlock "$SEND_LOCK"' EXIT INT TERM
 	last_ok="$(wc_jget "$STATUS" last_ok)"
@@ -162,7 +165,7 @@ send_queue() {
 
 case "$1" in
 	--send)
-		send_queue
+		send_queue "$2"
 		;;
 	--print)
 		n="$(jq_count "$QDIR")"
@@ -171,7 +174,7 @@ case "$1" in
 		build_batch "$n" /dev/stdout
 		;;
 	''|-*)
-		sed -n '3,20p' "$0" | sed 's/^# \{0,1\}//' >&2
+		sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//' >&2
 		exit 2
 		;;
 	*)

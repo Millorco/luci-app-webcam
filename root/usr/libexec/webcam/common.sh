@@ -212,12 +212,42 @@ wc_portal_set_retry() {
 wc_portal_call() {
 	local path="$1" out="$2" code
 	shift 2
+	# Con i comandi attivi (1.2.0) il router dice al portal che sa
+	# eseguirli: senza questa intestazione il portal non ne manda
+	[ "$WC_COMMANDS" = 0 ] || set -- -H "X-Webcam-Features: commands/1" "$@"
 	code="$(printf 'header = "Authorization: Bearer %s"\n' "$WC_PORTAL_TOKEN" | \
 		curl -sS -K - --connect-timeout 30 -o "$out" -D "$out.hdr" -w '%{http_code}' \
 		-H "User-Agent: luci-app-webcam/$(wc_app_version)" \
 		"$@" "$(wc_portal_base)$path" 2>"$out.err")"
 	case "$code" in ''|*[!0-9]*) code=000 ;; esac
+	case "$code" in 200|201) wc_commands_inbox "$out" "${path##*/}" ;; esac
 	echo "$code"
+}
+
+# ---------------------------------------------------
+# Comandi del portal (contratto 1.1, command/1)
+#
+# Ogni risposta riuscita che porta "commands" o "poll_after" viene
+# copiata in /tmp/webcam/commands_inbox/ e /usr/libexec/webcam/commands
+# la esegue in background (uno alla volta, nell'ordine di arrivo): la
+# richiesta che li ha portati è già chiusa e chi l'ha fatta non aspetta.
+# ---------------------------------------------------
+WC_COMMANDS_INBOX=/tmp/webcam/commands_inbox
+
+wc_commands_inbox() {
+	local f
+	[ "$WC_COMMANDS" = 0 ] && return 0
+	[ -s "$1" ] || return 0
+	grep -q '"commands"[[:space:]]*:\|"poll_after"[[:space:]]*:' "$1" 2>/dev/null || return 0
+	mkdir -p "$WC_COMMANDS_INBOX" || return 0
+	# Nome = uptime in centesimi (ordine di arrivo, e la scadenza si
+	# calcola anche senza NTP), PID e richiesta che li ha portati
+	f="$WC_COMMANDS_INBOX/$(awk '{ printf "%012d", $1 * 100 }' /proc/uptime)-$$-$(printf '%s' "$2" | tr -cd '[:lower:]')"
+	if ! cp "$1" "$f.tmp" 2>/dev/null || ! mv "$f.tmp" "$f.json"; then
+		rm -f "$f.tmp"
+		return 0
+	fi
+	/usr/libexec/webcam/commands --run </dev/null >/dev/null 2>&1 &
 }
 
 # Testo breve del motivo di una risposta del portal ($1 codice, $2 file)
