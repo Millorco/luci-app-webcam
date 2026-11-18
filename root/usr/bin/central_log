@@ -4,17 +4,25 @@
 # (vedi https://github.com/Millorco/webcam-vpn).
 #
 # Uso:
-#   central_log setup <peer.conf> [ip_syslog]
+#   central_log setup <peer.conf> [host_syslog[:porta]]
 #       importa il file .conf del peer scaricato da wg-easy, crea
-#       l'interfaccia wglog, apre dal tunnel SSH,
-#       LuCI e ping, e manda il log del router a ip_syslog:514 via TCP
-#       (predefinito: .1 della rete del tunnel, es. 10.13.13.1)
+#       l'interfaccia wglog (rete 10.8.0.0/24), apre dal tunnel SSH,
+#       LuCI e ping, e manda il log del router al server dei log via TCP
+#       (webcam-logserver: predefinito l'host dell'Endpoint del .conf,
+#       cioè il VPS, porta 5140)
+#   central_log log <host_syslog>[:porta]
+#       cambia solo la destinazione del log (porta predefinita 5140)
 #   central_log off      toglie tunnel, accesso e syslog remoto
 #   central_log status   mostra lo stato
+#
+# Host e porta predefiniti si possono cambiare anche con
+# webcam.general.log_host e webcam.general.log_port.
 # ---------------------------------------------------
 
 IFACE=wglog
-PORT=514
+PORT="$(uci -q get webcam.general.log_port)"
+case "$PORT" in ''|*[!0-9]*) PORT=5140 ;; esac
+LOG_HOST="$(uci -q get webcam.general.log_host)"
 
 die() { echo "Errore: $*" >&2; exit 1; }
 
@@ -114,8 +122,35 @@ remove_wg() {
 	uci -q delete network.$IFACE
 }
 
+# "host:porta" o "host" in LOGIP e PORT (IPv6 tra parentesi quadre)
+split_host() {
+	case "$1" in
+		\[*\]:*) LOGIP="${1%%]:*}"; LOGIP="${LOGIP#[}"; PORT="${1##*]:}" ;;
+		\[*\]) LOGIP="${1#[}"; LOGIP="${LOGIP%]}" ;;
+		*:*:*) LOGIP="$1" ;;
+		*:*) LOGIP="${1%:*}"; PORT="${1##*:}" ;;
+		*) LOGIP="$1" ;;
+	esac
+	case "$PORT" in ''|*[!0-9]*) die "porta del server dei log non valida: $PORT" ;; esac
+}
+
+set_syslog() {
+	uci set system.@system[0].log_ip="$1"
+	uci set system.@system[0].log_port="$2"
+	uci set system.@system[0].log_proto=tcp
+	uci commit system
+}
+
+setlog() {
+	split_host "$1"
+	set_syslog "$LOGIP" "$PORT"
+	/etc/init.d/log restart
+	logger -t central_log "Log remoto attivo verso $LOGIP:$PORT"
+	echo "Log remoto verso $LOGIP:$PORT/tcp."
+}
+
 setup() {
-	local conf="$1" logip="$2" priv addr pub psk endpoint host port allowed keep a
+	local conf="$1" logip priv addr pub psk endpoint host port allowed keep a
 
 	[ -f "$conf" ] || die "file $conf non trovato"
 	need_wireguard
@@ -137,15 +172,18 @@ setup() {
 	host="${host#[}"; host="${host%]}"
 	case "$port" in ''|*[!0-9]*) die "Endpoint non valido: $endpoint" ;; esac
 
-	# Solo IPv4 (es. 10.13.13.2/32): il primo indirizzo se ce ne sono più
+	# Solo IPv4 (es. 10.8.0.2/32): il primo indirizzo se ce ne sono più
 	addr="${addr%%,*}"
 	addr=$(echo "$addr" | tr -d " ")
 	case "$addr" in */*) ;; *) addr="$addr/32" ;; esac
 
-	if [ -z "$logip" ]; then
-		a="${addr%/*}"
-		logip="${a%.*}.1"
-	fi
+	# Server dei log: argomento, poi webcam.general.log_host, poi il VPS
+	# dell'Endpoint (webcam-logserver ascolta su 5140/TCP)
+	LOGIP="$host"
+	[ -n "$LOG_HOST" ] && split_host "$LOG_HOST"
+	[ -n "$2" ] && split_host "$2"
+	logip="$LOGIP"
+	a="${addr%/*}"
 
 	remove_wg
 	uci set network.$IFACE=interface
@@ -171,13 +209,10 @@ setup() {
 		uci add_list network.@wireguard_$IFACE[-1].allowed_ips="$a"
 	done
 	uci -q get network.@wireguard_$IFACE[-1].allowed_ips >/dev/null || \
-		uci add_list network.@wireguard_$IFACE[-1].allowed_ips="${logip%.*}.0/24"
+		uci add_list network.@wireguard_$IFACE[-1].allowed_ips="${a%.*}.0/24"
 	uci commit network
 
-	uci set system.@system[0].log_ip="$logip"
-	uci set system.@system[0].log_port="$PORT"
-	uci set system.@system[0].log_proto=tcp
-	uci commit system
+	set_syslog "$logip" "$PORT"
 
 	fw_open
 
@@ -224,8 +259,9 @@ status() {
 }
 
 case "$1" in
-	setup) [ -n "$2" ] || die "uso: $0 setup <peer.conf> [ip_syslog]"; setup "$2" "$3" ;;
+	setup) [ -n "$2" ] || die "uso: $0 setup <peer.conf> [host_syslog[:porta]]"; setup "$2" "$3" ;;
+	log) [ -n "$2" ] || die "uso: $0 log <host_syslog>[:porta]"; setlog "$2" ;;
 	off) off ;;
 	status) status ;;
-	*) sed -n '3,14p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+	*) sed -n '3,21p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

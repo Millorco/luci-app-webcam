@@ -17,6 +17,24 @@
         ],
         "/tmp/webcam/photo/*": [
           "read"
+        ],
+        "/tmp/webcam/telemetry_last.json": [
+          "read"
+        ],
+        "/tmp/webcam/telemetry_status.json": [
+          "read"
+        ],
+        "/tmp/webcam/event_status.json": [
+          "read"
+        ],
+        "/tmp/webcam/victron.json": [
+          "read"
+        ],
+        "/tmp/webcam/camera_info.json": [
+          "read"
+        ],
+        "/tmp/webcam/commands_history.jsonl": [
+          "read"
         ]
       },
       "uci": [
@@ -38,6 +56,12 @@
           "exec"
         ],
         "/usr/bin/check_updates *": [
+          "exec"
+        ],
+        "/usr/bin/portal_check": [
+          "exec"
+        ],
+        "/usr/libexec/webcam/commands --poll": [
           "exec"
         ]
       }

@@ -20,6 +20,15 @@ config general 'general'
         option ntp_wait '30'
         option update_check '1'
         option update_url ''
+        # Victron VE.Direct-USB (regolatore MPPT, SmartShunt facoltativo)
+        option victron '0'
+        option victron_port '/dev/ttyUSB0'
+        option victron_shunt_port ''
+        # Chiavetta 4G HiLink (es. Huawei E3372h): dati radio dalla sua API
+        option hilink '1'
+        option hilink_addr '192.168.8.1'
+        # Valore iniziale del contatore degli scatti (vuoto = non usato)
+        option shots_initial ''
 
 config shooting 'shooting'
         option photo_name 'raw'
@@ -52,6 +61,16 @@ config server 'server'
         option upload_data '1'
         option queue_size '20'
         option queue_dir ''
+        # Portal Webcam 2.0: URL base e token della webcam (wct_...)
+        option portal_url ''
+        option portal_token ''
+        # Destinazione delle foto: portal, ftp, both; vuoto = portal se
+        # portal_url è impostato, altrimenti ftp
+        option upload_target ''
+        option telemetry '1'
+        # Comandi dal portal (riscaldamento, scatto, invio telemetria,
+        # 7 opzioni): 0 = il router non li chiede e non li esegue
+        option commands '1'
 
 # Fasce orarie con un intervallo di scatto diverso (es. Capodanno).
 # date: vuoto = ogni giorno, MM-GG = ogni anno, AAAA-MM-GG = una volta;

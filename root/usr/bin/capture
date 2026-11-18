@@ -2,6 +2,7 @@
 # ---------------------------------------------------
 #
 # Scatto con fotocamera Canon EOS tramite gphoto2 e upload della foto
+# al portal (HTTPS) e/o al server FTP/FTPS/SFTP
 #
 # Uso: capture [--no-upload]
 #   --no-upload  scatto di prova: la foto resta solo sul router
@@ -10,6 +11,7 @@
 # ---------------------------------------------------
 
 . /usr/bin/webcam.cfg
+. /usr/libexec/webcam/common.sh
 
 SERIAL=/usr/libexec/webcam/serial
 PING=/usr/libexec/webcam/hc_ping
@@ -19,6 +21,8 @@ CAPTURE_JSON="$WC_STATE_DIR/capture.json"
 WORK_DIR=/tmp/webcam/photo
 LOCK_DIR=/var/lock/webcam_capture.lock
 LOCK_STALE=900        # un lock più vecchio di così è considerato orfano
+CAMERA_POWER="$WC_STATE_DIR/camera_power"   # 0 = relè della fotocamera spento
+CAMERA_INFO_EVERY=3600   # modello, serie, contatore: letti al massimo ogni ora
 
 NO_UPLOAD=0
 case "$1" in
@@ -60,6 +64,14 @@ SUNRISE=""
 SUNSET=""
 # Nome della fascia oraria speciale attiva (impostato da capture_service)
 SPECIAL="${WC_SPECIAL:-}"
+# Ora sincronizzata con NTP al momento dello scatto (photo/1)
+TIME_SYNCED="$(wc_time_synced)"
+# Destinazione: portal, ftp o both
+TARGET="$(wc_upload_target)"
+ATTEMPTS=1
+CYCLED=false
+DURATION=""
+PORTAL_RESULT=""
 
 # Sul terminale solo se lanciato a mano: sotto procd lo stderr finirebbe
 # nel syslog come "sh" a livello err, doppione della riga di logger.
@@ -79,19 +91,7 @@ log() {
 	logger -p "$(log_prio "$*")" -t "$WC_NAME capture" "$@"
 }
 
-# Stringa JSON con escape di \ e " (null se vuota). Gli a capo e le
-# tabulazioni diventano spazi, così un messaggio d'errore non rompe il file.
-json_str() {
-	[ -n "$1" ] || { echo null; return; }
-	printf '"%s"' "$(printf '%s' "$1" | tr '\n\t\r' '   ' | sed 's/\\/\\\\/g; s/"/\\"/g')"
-}
-
-json_num() {
-	case "$1" in
-		''|*[!0-9-]*) echo null ;;
-		*) echo "$1" ;;
-	esac
-}
+# json_str, json_num e le altre funzioni JSON sono in common.sh
 
 write_status() {
 	cat > "$CAPTURE_JSON.tmp" <<JSON
@@ -102,6 +102,9 @@ write_status() {
   "file": $(json_str "$FILENAME"),
   "upload": $( [ "$NO_UPLOAD" = 1 ] && echo false || echo true ),
   "queued": $(json_num "$QUEUED"),
+  "target": $(json_str "$TARGET"),
+  "portal": $(json_str "$PORTAL_RESULT"),
+  "time_synced": $TIME_SYNCED,
   "result": $(json_str "$1")
 }
 JSON
@@ -215,9 +218,13 @@ shoot() {
 camera_power_cycle() {
 	local i
 	log "Riavvio della fotocamera tramite la scheda."
+	CYCLED=true
+	echo 0 > "$CAMERA_POWER"
 	$SERIAL send c
 	sleep 10
 	$SERIAL send C
+	echo 1 > "$CAMERA_POWER"
+	counter_add power_cycles
 	for i in 1 2 3 4 5 6; do
 		sleep 5
 		gphoto2 --auto-detect 2>/dev/null | grep -q usb: && return 0
@@ -282,8 +289,12 @@ capture() {
 
 	if ! camera_present; then
 		log "ERRORE: fotocamera non trovata su USB, provo a riaccenderla dalla scheda."
-		camera_power_cycle || \
+		if ! camera_power_cycle; then
+			counter_add capture_errors
+			wc_event camera.missing error "Fotocamera non trovata su USB anche dopo il riavvio dalla scheda" \
+				"{\"file\":$(json_str "$FILENAME")}"
 			fail "fotocamera non trovata su USB anche dopo il riavvio dalla scheda: controlla alimentazione, cavo USB e che sia accesa"
+		fi
 	fi
 
 	# Spegne il riscaldamento durante lo scatto per avere abbastanza corrente
@@ -292,10 +303,15 @@ capture() {
 		$SERIAL send h
 	fi
 
+	t0=$(date +%s)
 	shoot "$iso" "$aperture" "$shutter"
 	rc=$?
 	if [ "$rc" -ne 0 ] || [ ! -f "$FILENAME" ]; then
-		log "ATTENZIONE: primo tentativo di scatto fallito ($(gphoto_reason)), riavvio la fotocamera e riprovo."
+		reason="$(gphoto_reason)"
+		log "ATTENZIONE: primo tentativo di scatto fallito ($reason), riavvio la fotocamera e riprovo."
+		wc_event camera.power_cycle warning "primo tentativo di scatto fallito ($reason), riavvio la fotocamera e riprovo" \
+			"{\"file\":$(json_str "$FILENAME"),\"gphoto2\":$(json_str "$(tail -n 3 "$WORK_DIR/gphoto2.err" 2>/dev/null | cut -c1-300)")}"
+		ATTEMPTS=2
 		camera_power_cycle
 		shoot "$iso" "$aperture" "$shutter"
 		rc=$?
@@ -308,9 +324,66 @@ capture() {
 		$SERIAL send H
 	fi
 
+	DURATION=$(( $(date +%s) - t0 ))
+
 	if [ "$rc" -ne 0 ] || [ ! -f "$FILENAME" ]; then
-		fail "scatto fallito dopo il riavvio della fotocamera: $(gphoto_reason)"
+		reason="$(gphoto_reason)"
+		counter_add capture_errors
+		wc_event camera.error error "Scatto fallito dopo il riavvio della fotocamera: $reason" \
+			"{\"file\":$(json_str "$FILENAME"),\"reason\":$(json_str "$reason"),\"gphoto2\":$(json_str "$(tail -n 3 "$WORK_DIR/gphoto2.err" 2>/dev/null | cut -c1-300)")}"
+		fail "scatto fallito dopo il riavvio della fotocamera: $reason"
 	fi
+}
+
+# ---------------------------------------------------
+# Fotocamera: modello, numero di serie, firmware, obiettivo, contatore
+# degli scatti (se la fotocamera lo espone, molte EOS entry level no) e
+# batteria. --list-all-config allunga lo scatto di qualche secondo, quindi
+# si legge al massimo una volta l'ora; il JSON ripete l'ultimo valore.
+# ---------------------------------------------------
+read_camera_info() {
+	local age kv model serial fw lens count batt change
+
+	if [ -s "$WC_CAMERA_INFO" ]; then
+		age=$(( $(date +%s) - $(date -r "$WC_CAMERA_INFO" +%s 2>/dev/null || echo 0) ))
+		[ "$age" -ge 0 ] && [ "$age" -lt "$CAMERA_INFO_EVERY" ] && return 0
+	fi
+
+	kv="$WORK_DIR/camera.kv"
+	wc_timeout 60 gphoto2 --list-all-config 2>/dev/null | awk '
+		/^\// { n = $0; sub(/.*\//, "", n); next }
+		/^Current: / && n != "" { if (!(n in seen)) { seen[n] = 1; print n "=" substr($0, 10) } }' > "$kv"
+	val() { sed -n "s/^$1=//p" "$kv" | head -n 1 | sed 's/[[:space:]]*$//'; }
+	model="$(val cameramodel)"; [ -n "$model" ] || model="$(val model)"
+	serial="$(val eosserialnumber)"; [ -n "$serial" ] || serial="$(val serialnumber)"
+	fw="$(val deviceversion)"; [ -n "$fw" ] || fw="$(val firmwareversion)"
+	lens="$(val lensname)"
+	count="$(val shuttercounter)"
+	batt="$(val batterylevel)"
+	rm -f "$kv"
+	# Numero di serie tutto a zeri: non letto
+	case "$serial" in ''|*[!0]*) ;; *) serial="" ;; esac
+	[ -n "$model$serial" ] || return 1
+
+	cat > "$WC_CAMERA_INFO.tmp" <<JSON
+{"model":$(json_str "$(printf '%s' "$model" | cut -c1-150)"),"serial":$(json_str "$(printf '%s' "$serial" | cut -c1-64)"),"firmware":$(json_str "$(printf '%s' "$fw" | cut -c1-32)"),"lens":$(json_str "$(printf '%s' "$lens" | cut -c1-100)"),"shutter_count":$(json_int "$count"),"battery_level":$(json_str "$(printf '%s' "$batt" | cut -c1-16)"),"read_at":$(date +%s)}
+JSON
+	mv "$WC_CAMERA_INFO.tmp" "$WC_CAMERA_INFO"
+
+	# Fotocamera cambiata: i contatori ripartono da 0
+	change="$(counters_camera "$model" "$serial")"
+	if [ -n "$change" ]; then
+		log "Fotocamera cambiata: $change (contatori azzerati)."
+		wc_event camera.change notice "Fotocamera cambiata: $change" \
+			"{\"from\":$(json_str "${change% -> *}"),\"to\":$(json_str "${change#* -> }")}"
+	fi
+	return 0
+}
+
+# Dopo uno scatto riuscito: contatori e dati della fotocamera
+after_shot() {
+	read_camera_info
+	counter_add shots_total
 }
 
 # ---------------------------------------------------
@@ -319,21 +392,37 @@ capture() {
 # Un valore null nelle impostazioni = lasciata quella della fotocamera.
 # ---------------------------------------------------
 write_datafile() {
-	local climate="null" status="$WC_STATE_DIR/status.json"
+	local climate="null" status="$WC_STATE_DIR/status.json" power="null" info="null" sha size
 
 	# Dati ambientali solo se recenti (climate gira ogni 5 minuti)
 	if [ -s "$status" ] && [ $(( $(date +%s) - $(date -r "$status" +%s) )) -lt 900 ]; then
-		climate="$(cat "$status")"
+		climate="$(sed 's/^[[:space:]]*//' "$status" | tr -d '\n')"
 	fi
+	# Ultimo campione Victron, se recente
+	[ "$WC_VICTRON" = 1 ] && power="$(wc_json_fresh "$WC_VICTRON_JSON" 900 || echo null)"
+	[ -s "$WC_CAMERA_INFO" ] && info="$(tr -d '\n' < "$WC_CAMERA_INFO")"
 
+	# SHA-256 e dimensione del JPEG, calcolati dopo lo scatto e prima del
+	# JSON: identificano la foto sul portal (idempotenza e certificazione)
+	sha="$(sha256sum "$WORK_DIR/$FILENAME" | cut -d' ' -f1)"
+	size="$(wc -c < "$WORK_DIR/$FILENAME" | tr -d ' ')"
+
+	# photo/1: i campi di photo/0 restano tutti con lo stesso nome
 	cat > "$WORK_DIR/$DATAFILE" <<JSON
 {
+  "schema": "photo/1",
   "time": $NOW,
   "datetime": $(json_str "$(date -d "@$NOW" +%Y-%m-%dT%H:%M:%S%z)"),
+  "time_synced": $TIME_SYNCED,
+  "mac": $(json_str "$(get_mac)"),
+  "hostname": $(json_str "$WC_NAME"),
   "camera": $(json_str "$WC_NAME"),
   "file": $(json_str "$FILENAME"),
+  "sha256": $(json_str "$sha"),
+  "size": $(json_num "$size"),
   "mode": $(json_str "$MODE"),
   "special": $(json_str "$SPECIAL"),
+  "interval": $(json_num "$WC_INTERVAL"),
   "settings": {
     "iso": $(json_str "$(choice_label "$ISO_JSON" "$iso")"),
     "aperture": $(json_str "$(choice_label "$APERTURE_JSON" "$aperture")"),
@@ -341,8 +430,14 @@ write_datafile() {
   },
   "day_start": $(json_num "$SUNRISE"),
   "day_end": $(json_num "$SUNSET"),
-  "app_version": $(json_str "$(cat /usr/share/webcam/version 2>/dev/null)"),
-  "climate": $climate
+  "lat": $(json_dec "$WC_LATITUDE"),
+  "lon": $(json_dec "$WC_LONGITUDE"),
+  "app_version": $(json_str "$(wc_app_version)"),
+  "board_fw": $(json_str "$(wc_board_fw)"),
+  "capture": { "attempts": $ATTEMPTS, "camera_power_cycled": $CYCLED, "duration_s": $(json_num "$DURATION") },
+  "camera_info": $info,
+  "climate": $climate,
+  "power": $power
 }
 JSON
 }
@@ -448,16 +543,23 @@ upload_reason() {
 
 # ---------------------------------------------------
 # Coda offline. Ogni foto da caricare viene messa in coda prima
-# dell'upload e tolta solo quando è arrivata sul server; se l'upload
+# dell'upload e tolta solo quando è arrivata a destinazione; se l'upload
 # fallisce (4G assente, server giù) resta lì e viene ritentata ai giri
-# successivi, dopo la foto nuova. La coda rispecchia le cartelle remote
-# (es. queue/2026/11/08/foto.jpg), così ogni foto finisce nella cartella
-# del giorno in cui è stata scattata.
-# In /tmp (RAM) la coda usa un collegamento fisico alla foto appena
-# scattata, quindi non occupa spazio in più finché quella resta sul router.
+# successivi, dopo la foto nuova.
+#   <coda>/[AAAA/MM/GG/]foto.jpg + .json   per l'FTP: rispecchia le cartelle
+#                                          remote, così ogni foto finisce
+#                                          nella cartella del suo giorno
+#   <coda>/portal/foto.jpg + .json         per il portal
+#   <coda>/rejected/                       foto rifiutate dal portal (400,
+#                                          413, 415, 422 ripetuto), al
+#                                          massimo 20, da guardare via SSH
+# In /tmp (RAM) la coda usa collegamenti fisici alla foto appena
+# scattata, quindi non occupa spazio in più finché quella resta sul router,
+# anche quando la stessa foto aspetta sia il portal sia l'FTP.
 # ---------------------------------------------------
 QUEUE_DIR=/tmp/webcam/queue
 QUEUE_RESERVE_KB=8192   # spazio da lasciare comunque libero nel filesystem
+REJECTED_MAX=20
 
 setup_queue() {
 	case "$WC_QUEUE_SIZE" in
@@ -472,6 +574,8 @@ setup_queue() {
 			log "ERRORE: cartella della coda $WC_QUEUE_DIR non trovata (chiavetta USB non montata o guasta?), uso $QUEUE_DIR in RAM."
 		fi
 	fi
+	PORTAL_QUEUE="$QUEUE_DIR/portal"
+	REJECTED_DIR="$QUEUE_DIR/rejected"
 	[ "$WC_QUEUE_SIZE" -gt 0 ] && mkdir -p "$QUEUE_DIR"
 }
 
@@ -479,25 +583,46 @@ queue_enabled() {
 	[ "$WC_QUEUE_SIZE" -gt 0 ] && [ -d "$QUEUE_DIR" ]
 }
 
-# Foto in coda, dalla più vecchia: si ordina per la parte finale del nome,
-# AAAAMMGG-HHMM.jpg, che non dipende dal prefisso scelto in LuCI
-queue_list() {
-	queue_enabled || return 0
-	find "$QUEUE_DIR" -type f -name '*.jpg' 2>/dev/null | \
-		awk '{ n = $0; sub(/.*\//, "", n); print substr(n, length(n) - 16) "\t" $0 }' | \
+# Ordina per la parte finale del nome, AAAAMMGG-HHMM.jpg, che non dipende
+# dal prefisso scelto in LuCI
+sort_photos() {
+	awk '{ n = $0; sub(/.*\//, "", n); print substr(n, length(n) - 16) "\t" $0 }' | \
 		sort | cut -f 2-
 }
 
-queue_count() {
-	queue_list | grep -c .
+# Foto in coda per l'FTP, dalla più vecchia (senza le sottocartelle del
+# portal, delle foto rifiutate, della telemetria e degli eventi)
+queue_list() {
+	queue_enabled || return 0
+	find "$QUEUE_DIR" \( -path "$QUEUE_DIR/portal" -o -path "$QUEUE_DIR/rejected" \
+		-o -path "$QUEUE_DIR/telemetry" -o -path "$QUEUE_DIR/events" \) -prune \
+		-o -type f -name '*.jpg' -print 2>/dev/null | sort_photos
 }
 
-# Aggiunge alla coda la foto $1 (e il .json accanto) con percorso remoto $2
+# Foto in coda per il portal, dalla più vecchia
+portal_queue_list() {
+	queue_enabled || return 0
+	[ -d "$PORTAL_QUEUE" ] || return 0
+	find "$PORTAL_QUEUE" -maxdepth 1 -type f -name '*.jpg' 2>/dev/null | sort_photos
+}
+
+# Tutte le foto in coda (FTP e portal), dalla più vecchia
+queue_list_all() {
+	{ queue_list; portal_queue_list; } | sort_photos
+}
+
+# Foto diverse in attesa: una foto che aspetta FTP e portal conta una volta
+queue_count() {
+	queue_list_all | sed 's:.*/::' | sort -u | grep -c .
+}
+
+# Aggiunge alla coda la foto $1 (e il .json accanto) nel percorso $2
+# relativo a $3 (predefinito: la coda dell'FTP)
 queue_add() {
-	local src="$1" rel="$2" dst
+	local src="$1" rel="$2" base="${3:-$QUEUE_DIR}" dst
 
 	queue_enabled || return 0
-	dst="$QUEUE_DIR/$rel"
+	dst="$base/$rel"
 	mkdir -p "${dst%/*}"
 	ln -f "$src" "$dst" 2>/dev/null || cp "$src" "$dst" || return 1
 	if [ -f "${src%.jpg}.json" ]; then
@@ -512,7 +637,7 @@ queue_add() {
 queue_remove() {
 	local f="$1" d
 
-	rm -f "$f" "${f%.jpg}.json"
+	rm -f "$f" "${f%.jpg}.json" "$f.422"
 	d="${f%/*}"
 	while [ "$d" != "$QUEUE_DIR" ] && [ "${d#"$QUEUE_DIR"/}" != "$d" ]; do
 		rmdir "$d" 2>/dev/null || break
@@ -524,54 +649,207 @@ queue_free_kb() {
 	free_kb "$QUEUE_DIR"
 }
 
-# Rispetta il limite in MB e lascia libero lo spazio di riserva,
-# cancellando le foto più vecchie. La foto più recente resta sempre.
+# Rispetta il limite in MB e lascia libero lo spazio di riserva: prima
+# cancella le foto rifiutate, poi le più vecchie in coda (da tutte le
+# destinazioni). La foto più recente resta sempre.
 queue_prune() {
-	local used free oldest dropped=0
+	local used free oldest name f dropped=0
 
 	queue_enabled || return 0
-	while [ "$(queue_count)" -gt 1 ]; do
+	while :; do
 		used=$(du -sk "$QUEUE_DIR" 2>/dev/null | awk '{ print $1 }')
 		free=$(queue_free_kb)
 		[ "${used:-0}" -le $(( WC_QUEUE_SIZE * 1024 )) ] && \
 			[ "${free:-0}" -ge "$QUEUE_RESERVE_KB" ] && break
-		oldest=$(queue_list | head -n 1)
-		queue_remove "$oldest"
+		oldest="$(find "$REJECTED_DIR" -type f -name '*.jpg' 2>/dev/null | sort_photos | head -n 1)"
+		if [ -n "$oldest" ]; then
+			rm -f "$oldest" "${oldest%.jpg}.json" "${oldest%.jpg}.txt"
+			continue
+		fi
+		[ "$(queue_count)" -gt 1 ] || break
+		name="$(queue_list_all | head -n 1)"
+		name="${name##*/}"
+		for f in $(queue_list_all | grep "/$name\$"); do
+			queue_remove "$f"
+		done
 		dropped=$(( dropped + 1 ))
 	done
-	[ "$dropped" -gt 0 ] && \
+	if [ "$dropped" -gt 0 ]; then
 		log "ATTENZIONE: coda di upload piena, cancellate $dropped foto non caricate (le più vecchie)."
+		wc_event queue.dropped error "Coda di upload piena: cancellate $dropped foto non caricate" "{\"count\":$dropped}"
+	fi
 	return 0
 }
 
+# Tempo per svuotare le code: metà intervallo, al massimo 5 minuti, così
+# il prossimo scatto non slitta (diviso tra portal e FTP se sono due)
+drain_budget() {
+	local budget=300
+	case "$WC_INTERVAL" in
+		''|*[!0-9]*) ;;
+		*) [ $(( WC_INTERVAL * 30 )) -lt "$budget" ] && budget=$(( WC_INTERVAL * 30 )) ;;
+	esac
+	[ "$TARGET" = both ] && budget=$(( budget / 2 ))
+	echo "$budget"
+}
+
+# ---------------------------------------------------
+# Upload al portal: POST /api/v1/photo, multipart con la foto e il suo
+# JSON photo/1 (vedi il contratto, api-portal-v1.md). La foto è
+# riconosciuta dallo SHA-256: un secondo invio della stessa foto non la
+# duplica, quindi riprovare è sempre sicuro.
+# ---------------------------------------------------
+PORTAL_REASON=""
+
+# Sposta una foto della coda del portal in rejected/, con il motivo
+portal_reject() {
+	local f="$1" why="$2" name old
+
+	name="${f##*/}"
+	mkdir -p "$REJECTED_DIR"
+	mv -f "$f" "$REJECTED_DIR/$name" 2>/dev/null
+	[ -f "${f%.jpg}.json" ] && mv -f "${f%.jpg}.json" "$REJECTED_DIR/${name%.jpg}.json"
+	printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M')" "$why" > "$REJECTED_DIR/${name%.jpg}.txt"
+	rm -f "$f.422"
+	while [ "$(find "$REJECTED_DIR" -type f -name '*.jpg' | grep -c .)" -gt "$REJECTED_MAX" ]; do
+		old="$(find "$REJECTED_DIR" -type f -name '*.jpg' | sort_photos | head -n 1)"
+		rm -f "$old" "${old%.jpg}.json" "${old%.jpg}.txt"
+	done
+}
+
+# Manda la foto $1 (con il .json accanto). $2 = 1 se è la foto nuova
+# (aggiorna current.jpg), 0 se arriva dalla coda.
+# Ritorna 0 inviata, 1 da riprovare più tardi (coda ferma), 2 rifiutata.
+portal_send() {
+	local jpg="$1" current="$2" json="${1%.jpg}.json" resp code wait
+
+	resp="$WORK_DIR/portal.resp"
+	wait="$(wc_portal_wait_left)"
+	if [ "$wait" -gt 0 ]; then
+		PORTAL_REASON="il portal ha chiesto di aspettare ancora $wait s (HTTP 429)"
+		return 1
+	fi
+	if [ ! -f "$json" ]; then
+		PORTAL_REASON="manca il file di dati ${json##*/}"
+		return 2
+	fi
+
+	code="$(wc_portal_call /api/v1/photo "$resp" -m 300 --retry 2 \
+		-F "photo=@$jpg;type=image/jpeg" \
+		-F "meta=@$json;type=application/json" \
+		-F "current=$current")"
+	PORTAL_REASON="$(wc_portal_reason "$code" "$resp")"
+	case "$code" in
+		200|201)
+			[ "$(wc_jget "$resp" duplicate)" = true ] && PORTAL_REASON="già ricevuta" || PORTAL_REASON=""
+			return 0
+			;;
+		400|413|415)
+			return 2
+			;;
+		422)
+			# Un solo nuovo tentativo (upload troncato?), poi rejected/.
+			# Per la foto nuova il segno va sulla sua copia in coda.
+			[ "$current" = 1 ] && jpg="$PORTAL_QUEUE/${jpg##*/}"
+			[ -f "$jpg.422" ] && return 2
+			[ -f "$jpg" ] && touch "$jpg.422"
+			return 1
+			;;
+		429)
+			wc_portal_set_retry "$resp.hdr"
+			return 1
+			;;
+		*)
+			return 1
+			;;
+	esac
+}
+
+# Ritenta le foto rimaste nella coda del portal, dalla più vecchia
+portal_drain() {
+	local budget start f sent=0 rc
+
+	queue_enabled || return 0
+	budget=$(drain_budget)
+	start=$(date +%s)
+	portal_queue_list > "$WORK_DIR/portal.lst"
+	while IFS= read -r f; do
+		[ $(( $(date +%s) - start )) -ge "$budget" ] && break
+		portal_send "$f" 0 </dev/null
+		rc=$?
+		case "$rc" in
+			0) queue_remove "$f"; sent=$(( sent + 1 )) ;;
+			2)
+				log "ERRORE: il portal ha rifiutato la foto in coda ${f##*/} ($PORTAL_REASON): spostata in $REJECTED_DIR."
+				portal_reject "$f" "$PORTAL_REASON"
+				;;
+			*)
+				log "ATTENZIONE: upload al portal della foto in coda ${f##*/} fallito ($PORTAL_REASON): riprovo al prossimo giro."
+				break
+				;;
+		esac
+	done < "$WORK_DIR/portal.lst"
+	rm -f "$WORK_DIR/portal.lst"
+	[ "$sent" -gt 0 ] && log "OK caricate sul portal $sent foto rimaste in coda, ne restano $(portal_queue_list | grep -c .)."
+	return 0
+}
+
+# Foto nuova al portal. Imposta PORTAL_RESULT; ritorna 1 se non è arrivata.
+portal_upload() {
+	local rc jpg="$WORK_DIR/$FILENAME"
+
+	queue_add "$jpg" "$FILENAME" "$PORTAL_QUEUE" || \
+		log "ERRORE: impossibile mettere in coda $FILENAME per il portal (spazio libero in $QUEUE_DIR: $(free_kb "$QUEUE_DIR") KB): se l'upload fallisce la foto va persa"
+
+	portal_send "$jpg" 1
+	rc=$?
+	case "$rc" in
+		0)
+			queue_enabled && queue_remove "$PORTAL_QUEUE/$FILENAME"
+			PORTAL_RESULT=ok
+			log "OK foto caricata: $FILENAME ($MODE${SPECIAL:+, $SPECIAL}, portal${PORTAL_REASON:+, $PORTAL_REASON})"
+			return 0
+			;;
+		2)
+			PORTAL_RESULT="rifiutata: $PORTAL_REASON"
+			log "ERRORE: il portal ha rifiutato la foto $FILENAME ($PORTAL_REASON)"
+			if queue_enabled && [ -f "$PORTAL_QUEUE/$FILENAME" ]; then
+				portal_reject "$PORTAL_QUEUE/$FILENAME" "$PORTAL_REASON"
+			fi
+			return 1
+			;;
+		*)
+			PORTAL_RESULT="$PORTAL_REASON"
+			return 1
+			;;
+	esac
+}
+
 # Carica la foto locale $1 con il percorso remoto $2, più il suo .json
+# (solo con "Upload data file": con il portal il .json esiste sempre)
 upload_photo() {
 	local jpg="$1" rel="$2"
 
 	put_file "$jpg" "$rel" || return 1
-	if [ -f "${jpg%.jpg}.json" ]; then
+	if [ "$WC_UPLOAD_DATA" = 1 ] && [ -f "${jpg%.jpg}.json" ]; then
 		put_file "${jpg%.jpg}.json" "${rel%.jpg}.json" || \
 			log "ATTENZIONE: upload del file di dati ${rel%.jpg}.json fallito ($(upload_reason))"
 	fi
 	return 0
 }
 
-# Ritenta le foto rimaste in coda, dalla più vecchia. Si ferma al primo
-# errore (la rete è di nuovo giù) o quando il tempo a disposizione è finito,
-# così il prossimo scatto non slitta: metà intervallo, al massimo 5 minuti.
+# Ritenta le foto rimaste in coda per l'FTP, dalla più vecchia. Si ferma al
+# primo errore (la rete è di nuovo giù) o quando il tempo è finito.
 queue_drain() {
-	local budget f rel sent=0
+	local budget start f rel sent=0
 
 	queue_enabled || return 0
-	budget=300
-	case "$WC_INTERVAL" in
-		''|*[!0-9]*) ;;
-		*) [ $(( WC_INTERVAL * 30 )) -lt "$budget" ] && budget=$(( WC_INTERVAL * 30 )) ;;
-	esac
+	budget=$(drain_budget)
+	start=$(date +%s)
 
 	queue_list > "$WORK_DIR/queue.lst"
 	while IFS= read -r f; do
-		[ $(( $(date +%s) - NOW )) -ge "$budget" ] && break
+		[ $(( $(date +%s) - start )) -ge "$budget" ] && break
 		rel="${f#"$QUEUE_DIR"/}"
 		if upload_photo "$f" "$rel" </dev/null; then
 			queue_remove "$f"
@@ -582,19 +860,14 @@ queue_drain() {
 		fi
 	done < "$WORK_DIR/queue.lst"
 	rm -f "$WORK_DIR/queue.lst"
-	[ "$sent" -gt 0 ] && log "OK caricate $sent foto rimaste in coda, ne restano $(queue_count)."
+	[ "$sent" -gt 0 ] && log "OK caricate $sent foto rimaste in coda, ne restano $(queue_list | grep -c .)."
 	return 0
 }
 
-upload() {
-	local dir archive latest result=ok queued
-
-	[ -n "$WC_UPLOAD_SERVER" ] || fail "server di upload non configurato"
-
-	if [ "$WC_UPLOAD_PROTOCOL" = sftp ]; then
-		curl -V 2>/dev/null | grep -q '^Protocols:.*sftp' || \
-			fail "il curl installato non supporta SFTP (serve curl compilato con libssh2)"
-	fi
+# Destinazione FTP: foto nuova, copia current.jpg, coda. Esce con fail()
+# se la foto nuova non arriva (come nella 1.0).
+ftp_upload() {
+	local dir archive latest reason
 
 	dir="${WC_UPLOAD_DIRECTORY#/}"
 	dir="${dir%/}"
@@ -604,9 +877,6 @@ upload() {
 	archive=""
 	[ "$WC_UPLOAD_DATE_DIRS" = 1 ] && archive="$(date -d "@$NOW" +%Y/%m/%d)/"
 
-	[ "$WC_UPLOAD_DATA" = 1 ] && write_datafile
-
-	setup_queue
 	queue_add "$WORK_DIR/$FILENAME" "$archive$FILENAME" || \
 		log "ERRORE: impossibile mettere in coda $FILENAME (spazio libero in $QUEUE_DIR: $(free_kb "$QUEUE_DIR") KB): se l'upload fallisce la foto va persa"
 	queue_prune
@@ -615,10 +885,13 @@ upload() {
 	# subito anche quando ci sono foto arretrate da recuperare
 	if ! upload_photo "$WORK_DIR/$FILENAME" "$archive$FILENAME"; then
 		QUEUED=$(queue_count)
+		reason="$(upload_reason)"
+		wc_event upload.error warning "Upload FTP di $FILENAME fallito: $reason" \
+			"{\"reason\":$(json_str "$reason"),\"queued\":$(json_num "$QUEUED")}"
 		if queue_enabled; then
-			fail "upload fallito verso $WC_UPLOAD_PROTOCOL://$WC_UPLOAD_SERVER/$dir$archive ($(upload_reason)), foto in coda: $QUEUED"
+			fail "upload fallito verso $WC_UPLOAD_PROTOCOL://$WC_UPLOAD_SERVER/$dir$archive ($reason), foto in coda: $QUEUED"
 		fi
-		fail "upload fallito verso $WC_UPLOAD_PROTOCOL://$WC_UPLOAD_SERVER/$dir$archive ($(upload_reason))"
+		fail "upload fallito verso $WC_UPLOAD_PROTOCOL://$WC_UPLOAD_SERVER/$dir$archive ($reason)"
 	fi
 	queue_enabled && queue_remove "$QUEUE_DIR/$archive$FILENAME"
 
@@ -638,11 +911,67 @@ upload() {
 			fi
 		else
 			log "ATTENZIONE: upload della copia $latest.jpg fallito ($(upload_reason))"
-			result="ok, ma copia $latest.jpg non caricata"
+			FTP_RESULT="ok, ma copia $latest.jpg non caricata"
+		fi
+	fi
+}
+
+upload() {
+	local result=ok has_portal=0 has_ftp=0
+	FTP_RESULT=ok
+
+	case "$TARGET" in
+		portal) has_portal=1 ;;
+		both) has_portal=1; has_ftp=1 ;;
+		*) has_ftp=1 ;;
+	esac
+
+	if [ "$has_portal" = 1 ]; then
+		wc_portal_enabled || \
+			fail "portal non configurato: imposta portal_url e portal_token (Webcam > Portal) o scegli FTP come destinazione"
+		case "$WC_PORTAL_URL" in
+			http://*|https://*) ;;
+			*) fail "portal_url non valido: deve iniziare con https://" ;;
+		esac
+	fi
+	if [ "$has_ftp" = 1 ]; then
+		[ -n "$WC_UPLOAD_SERVER" ] || fail "server di upload non configurato"
+		if [ "$WC_UPLOAD_PROTOCOL" = sftp ]; then
+			curl -V 2>/dev/null | grep -q '^Protocols:.*sftp' || \
+				fail "il curl installato non supporta SFTP (serve curl compilato con libssh2)"
 		fi
 	fi
 
-	queue_drain
+	# Con il portal il JSON photo/1 serve sempre (viaggia con la foto)
+	if [ "$has_portal" = 1 ] || [ "$WC_UPLOAD_DATA" = 1 ]; then
+		write_datafile
+	fi
+
+	setup_queue
+
+	if [ "$has_portal" = 1 ]; then
+		if ! portal_upload; then
+			queue_prune
+			QUEUED=$(queue_count)
+			if [ "$has_ftp" = 0 ]; then
+				queue_enabled && \
+					fail "upload al portal di $FILENAME fallito ($PORTAL_RESULT), foto in coda: $QUEUED"
+				fail "upload al portal di $FILENAME fallito ($PORTAL_RESULT)"
+			fi
+			log "ATTENZIONE: upload al portal di $FILENAME fallito ($PORTAL_RESULT), provo comunque l'FTP."
+			result="ok via FTP, portal: $PORTAL_RESULT"
+		else
+			queue_prune
+			portal_drain
+		fi
+	fi
+
+	if [ "$has_ftp" = 1 ]; then
+		ftp_upload
+		[ "$FTP_RESULT" != ok ] && [ "$result" = ok ] && result="$FTP_RESULT"
+		queue_drain
+	fi
+
 	QUEUED=$(queue_count)
 	write_status "$result"
 }
@@ -656,6 +985,7 @@ if [ "$NO_UPLOAD" = 0 ] && [ "$(date -d "@$NOW" +%Y)" -lt 2025 ]; then
 fi
 day_or_night
 capture
+after_shot
 if [ "$NO_UPLOAD" = 1 ]; then
 	log "Scatto di prova senza upload: $FILENAME ($MODE)"
 	write_status test

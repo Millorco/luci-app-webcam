@@ -179,6 +179,7 @@ install_packages() {
     REQUIRED_PACKAGES="
 coreutils-stty
 curl
+ca-bundle
 gphoto2
 libgphoto2-drivers-ptp2
 wireguard-tools
@@ -320,6 +321,15 @@ download_and_install() {
     if [ -f /etc/uci-defaults/90-webcam-leds ] && [ -x /usr/bin/add_led_config ]; then
         /usr/bin/add_led_config || true
         rm -f /etc/uci-defaults/90-webcam-leds
+    fi
+
+    # Hostname unico (WC-<MAC>) se è ancora quello predefinito: i log
+    # centralizzati riconoscono la webcam dall'hostname. Stesso script in
+    # /etc/uci-defaults per chi aggiorna estraendo l'archivio.
+    if [ -f /etc/uci-defaults/91-webcam-hostname ]; then
+        sh /etc/uci-defaults/91-webcam-hostname || true
+        rm -f /etc/uci-defaults/91-webcam-hostname
+        echo "Hostname: $(uci -q get system.@system[0].hostname)"
     fi
 
     echo "Pulizia cache LuCI..."

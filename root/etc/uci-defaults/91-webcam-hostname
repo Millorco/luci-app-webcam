@@ -1,0 +1,36 @@
+#!/bin/sh
+# ---------------------------------------------------
+# Hostname unico per ogni webcam (1.2.0).
+#
+# VictoriaLogs collega i log alla webcam solo dal campo hostname e il
+# portal li usa solo se l'hostname è unico tra le webcam in servizio.
+# All'installazione (e dopo un aggiornamento da archivio) un hostname
+# ancora predefinito (OpenWrt, LEDE, GL-MT300N-V2 o un altro GL-...)
+# diventa WC-<MAC in maiuscolo senza ':'>, come il ref della webcam in
+# Dolibarr (es. WC-9483C412ABCD). Un hostname scelto dall'utente non si
+# tocca. Il MAC è quello di get_mac (prima scheda fisica, eth0).
+# ---------------------------------------------------
+
+current="$(uci -q get system.@system[0].hostname)"
+case "$current" in
+	''|OpenWrt|openwrt|LEDE|lede|GL-*|gl-*) ;;
+	*) exit 0 ;;
+esac
+
+mac=""
+for i in eth0 br-lan $(ls /sys/class/net 2>/dev/null); do
+	m="$(cat "/sys/class/net/$i/address" 2>/dev/null)"
+	case "$m" in ''|00:00:00:00:00:00) continue ;; esac
+	mac="$m"
+	break
+done
+[ -n "$mac" ] || exit 0
+
+name="WC-$(echo "$mac" | tr -d ':' | tr 'a-f' 'A-F')"
+[ "$name" = "$current" ] && exit 0
+uci -q set system.@system[0].hostname="$name" && uci -q commit system || exit 0
+# Subito anche nel kernel e nel log (senza aspettare il riavvio)
+echo "$name" > /proc/sys/kernel/hostname 2>/dev/null
+[ -x /etc/init.d/system ] && /etc/init.d/system reload >/dev/null 2>&1
+logger -t webcam "Hostname impostato a $name (era ${current:-vuoto}): identifica la webcam nei log centralizzati"
+exit 0

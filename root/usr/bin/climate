@@ -12,17 +12,44 @@
 # ne legge i valori e li aggiunge allo stato; il riscaldamento resta
 # comandato solo dal sensore interno.
 #
-# Scrive lo stato in /tmp/webcam/status.json (pagina Status di LuCI).
-# Eseguito da cron ogni 5 minuti.
+# Scrive lo stato in /tmp/webcam/status.json (pagina Status di LuCI, JSON
+# delle foto e telemetria), con l'umidità assoluta (g/m³) e lo stato della
+# ventola. Accensione e spegnimento del riscaldamento, sensori che non
+# rispondono e cambi di firmware della scheda diventano anche eventi per
+# il portal (event/1), oltre alla riga di log.
+#
+# Boost (1.2.0): il comando heater.boost del portal scrive l'ora di fine
+# in /tmp/webcam/heater_boost_until; fino ad allora il riscaldamento resta
+# acceso (e la ventola se heat_fan = 1), con le stesse protezioni: niente
+# boost con heating = 0, con il sensore interno che non risponde o con
+# la temperatura interna oltre BOOST_MAX_TEMP. Lo scatto lo spegne come
+# sempre per il tempo della foto.
+#
+# Campi per la diagnosi del portal (contratto 1.1) in status.json:
+# heater_on_since, heater_duty_pct (ultimi 60 minuti), heat_reason,
+# heater_boost_until, dewpoint_margin.
+#
+# Uso: climate [--now]
+# Eseguito da cron ogni 5 minuti; --now (comandi del portal, fine del
+# boost) aggiorna subito lo stato senza contare il giro nella percentuale
+# di accensione dell'ultima ora.
 # ---------------------------------------------------
 
 . /usr/bin/webcam.cfg
+. /usr/libexec/webcam/common.sh
 
 SERIAL=/usr/libexec/webcam/serial
 STATE_FILE="$WC_STATE_DIR/heater"       # 1 = acceso, 0 = spento
 CAPTURE_FLAG="$WC_STATE_DIR/capturing"  # presente durante uno scatto
 STATUS_JSON="$WC_STATE_DIR/status.json"
+BOOST_FILE="$WC_STATE_DIR/heater_boost_until"
+DUTY_FILE="$WC_STATE_DIR/heater_duty"      # "ora stato" di ogni giro da cron
+REASON_FILE="$WC_STATE_DIR/heat_reason"
+LOCK=/var/lock/webcam_climate.lock
+BOOST_MAX_TEMP=40       # °C interni: oltre, niente boost (la scheda spegne a 45)
+DUTY_CYCLES=12          # 60 minuti di giri ogni 5 minuti
 
+MODE="$1"
 mkdir -p "$WC_STATE_DIR"
 
 log() {
@@ -32,8 +59,19 @@ log() {
 	esac
 }
 
+# Un giro alla volta (cron e comandi del portal)
+wc_lock "$LOCK" 180 90 || { log "ATTENZIONE: un altro controllo del riscaldamento è in corso."; exit 0; }
+trap 'wc_unlock "$LOCK"' EXIT INT TERM
+
 HEATER="$(cat "$STATE_FILE" 2>/dev/null)"
 [ "$HEATER" = 1 ] || HEATER=0
+PREV_REASON="$(cat "$REASON_FILE" 2>/dev/null)"
+
+# Il file di stato si riscrive solo quando cambia: la sua ora di modifica
+# è heater_on_since
+write_state() {
+	[ "$(cat "$STATE_FILE" 2>/dev/null)" = "$1" ] || echo "$1" > "$STATE_FILE"
+}
 
 set_heater() {
 	if [ "$1" = 1 ]; then
@@ -43,7 +81,7 @@ set_heater() {
 		$SERIAL send h
 		[ "$WC_HEAT_FAN" = 1 ] && $SERIAL send f
 	fi
-	echo "$1" > "$STATE_FILE"
+	write_state "$1"
 	HEATER="$1"
 }
 
@@ -62,14 +100,37 @@ dewpoint() {
 	}'
 }
 
+# Umidità assoluta in g/m³ (stesse costanti di Magnus del punto di rugiada)
+abs_humidity() {
+	awk -v t="$1" -v h="$2" 'BEGIN {
+		printf "%.2f", 216.7 * (h / 100 * 6.112 * exp(17.62 * t / (243.12 + t))) / (273.15 + t)
+	}'
+}
+
+# Evento solo al cambio di stato di un sensore ($1 int/ext, $2 1 = ok)
+sensor_event() {
+	local f="$WC_STATE_DIR/sensor_err_$1" name
+	[ "$1" = int ] && name="interno (0x44)" || name="esterno (0x45)"
+	if [ "$2" = 1 ]; then
+		[ -f "$f" ] && { rm -f "$f"; wc_event sensor.ok notice "Sensore $name di nuovo funzionante" "{\"sensor\":\"$1\"}"; }
+	elif [ ! -f "$f" ]; then
+		touch "$f"
+		wc_event sensor.error error "Sensore $name di temperatura e umidità non risponde" "{\"sensor\":\"$1\"}"
+	fi
+}
+
 SENSOR_OK=1
 DEWPOINT=""
+ABS_HUM=""
+ABS_HUM_EXT=""
 if [ -z "$TEMP" ] || [ -z "$HUM" ]; then
 	SENSOR_OK=0
 	log "ERRORE: sensore interno di temperatura e umidità non risponde (SHT31 a 0x44 o scheda scollegati?): riscaldamento lasciato invariato."
 else
 	DEWPOINT=$(dewpoint "$TEMP" "$HUM")
+	ABS_HUM=$(abs_humidity "$TEMP" "$HUM")
 fi
+sensor_event int "$SENSOR_OK"
 
 # Sensore esterno (facoltativo)
 EXT_OK=0
@@ -86,35 +147,116 @@ if [ "$WC_EXT_SENSOR" = 1 ]; then
 	else
 		EXT_OK=1
 		DEWPOINT_EXT=$(dewpoint "$TEMP_EXT" "$HUM_EXT")
+		ABS_HUM_EXT=$(abs_humidity "$TEMP_EXT" "$HUM_EXT")
 	fi
+	sensor_event ext "$EXT_OK"
 fi
 
 DECISION="$HEATER"
+REASON="$PREV_REASON"
 if [ "$SENSOR_OK" = 1 ] && [ "$WC_HEATING" = 1 ]; then
-	DECISION=$(awk -v t="$TEMP" -v dp="$DEWPOINT" -v cur="$HEATER" \
+	# "1 dewpoint", "1 min_temp" o "0 off"
+	# shellcheck disable=SC2046
+	set -- $(awk -v t="$TEMP" -v dp="$DEWPOINT" -v cur="$HEATER" \
 		-v margin="$WC_HEAT_DEWPOINT_MARGIN" -v hyst="$WC_HEAT_HYSTERESIS" \
 		-v tmin="$WC_HEAT_MIN_TEMP" 'BEGIN {
 		spread = t - dp
-		if (spread < margin || t < tmin) { print 1; exit }
-		if (cur == 1 && (spread < margin + hyst || t < tmin + hyst)) { print 1; exit }
-		print 0
+		if (spread < margin) { print 1, "dewpoint"; exit }
+		if (t < tmin) { print 1, "min_temp"; exit }
+		if (cur == 1 && spread < margin + hyst) { print 1, "dewpoint"; exit }
+		if (cur == 1 && t < tmin + hyst) { print 1, "min_temp"; exit }
+		print 0, "off"
 	}')
+	DECISION="$1"
+	REASON="$2"
 elif [ "$WC_HEATING" != 1 ]; then
 	DECISION=0
+	REASON=off
+elif [ "$PREV_REASON" = boost ]; then
+	# Sensore interno muto: un riscaldamento acceso solo dal boost si spegne
+	DECISION=0
+	REASON=off
 fi
+
+# Boost comandato dal portal
+NOW=$(date +%s)
+BOOST_UNTIL="$(cat "$BOOST_FILE" 2>/dev/null)"
+case "$BOOST_UNTIL" in ''|*[!0-9]*) [ -f "$BOOST_FILE" ] && rm -f "$BOOST_FILE"; BOOST_UNTIL="" ;; esac
+if [ -n "$BOOST_UNTIL" ]; then
+	if [ "$NOW" -ge "$BOOST_UNTIL" ] || [ $(( BOOST_UNTIL - NOW )) -gt 3700 ]; then
+		log "Boost del riscaldamento terminato."
+		rm -f "$BOOST_FILE" "$WC_STATE_DIR/boost_held"
+		BOOST_UNTIL=""
+	elif [ "$WC_HEATING" != 1 ]; then
+		log "Boost del riscaldamento annullato: riscaldamento automatico disattivato."
+		rm -f "$BOOST_FILE" "$WC_STATE_DIR/boost_held"
+		BOOST_UNTIL=""
+	elif [ "$SENSOR_OK" != 1 ] || awk -v t="$TEMP" -v m="$BOOST_MAX_TEMP" 'BEGIN { exit !(t >= m) }'; then
+		# Protezione: il boost resta in attesa ma non accende nulla
+		if [ ! -f "$WC_STATE_DIR/boost_held" ]; then
+			touch "$WC_STATE_DIR/boost_held"
+			log "ATTENZIONE: boost del riscaldamento sospeso ($( [ "$SENSOR_OK" != 1 ] && echo "sensore interno non disponibile" || echo "temperatura interna $TEMP °C oltre $BOOST_MAX_TEMP °C"))."
+		fi
+	else
+		rm -f "$WC_STATE_DIR/boost_held"
+		DECISION=1
+		REASON=boost
+	fi
+fi
+[ "$DECISION" = 1 ] || REASON=off
+# Acceso ma senza un motivo noto (sensore muto dopo un riavvio): null
+case "$REASON" in dewpoint|min_temp|boost|off) ;; *) REASON="" ;; esac
 
 # Durante uno scatto il riscaldamento è spento di proposito: non toccarlo,
 # a meno che il flag sia rimasto orfano (più vecchio di 15 minuti).
 if [ -f "$CAPTURE_FLAG" ] && [ $(( $(date +%s) - $(date -r "$CAPTURE_FLAG" +%s) )) -lt 900 ]; then
-	[ "$DECISION" != "$HEATER" ] && echo "$DECISION" > "$STATE_FILE"
+	write_state "$DECISION"
 	HEATER="$DECISION"
+	echo "$REASON" > "$REASON_FILE"
+	REASON=capture
 else
 	# Il comando viene reinviato sempre: così lo stato reale dei relè
 	# torna allineato anche dopo un riavvio del router o della scheda.
 	PREV="$HEATER"
 	set_heater "$DECISION"
-	[ "$DECISION" != "$PREV" ] && \
-		log "Riscaldamento $( [ "$DECISION" = 1 ] && echo ACCESO || echo SPENTO ) (T=${TEMP} RH=${HUM} Td=${DEWPOINT}$( [ "$EXT_OK" = 1 ] && echo " esterno: T=${TEMP_EXT} RH=${HUM_EXT} Td=${DEWPOINT_EXT}"))"
+	if [ "$DECISION" != "$PREV" ]; then
+		log "Riscaldamento $( [ "$DECISION" = 1 ] && echo ACCESO || echo SPENTO ) (T=${TEMP} RH=${HUM} Td=${DEWPOINT}$( [ "$EXT_OK" = 1 ] && echo " esterno: T=${TEMP_EXT} RH=${HUM_EXT} Td=${DEWPOINT_EXT}")$( [ "$REASON" = boost ] && echo ", boost dal portal"))"
+		wc_event "heating.$( [ "$DECISION" = 1 ] && echo on || echo off )" info \
+			"Riscaldamento $( [ "$DECISION" = 1 ] && echo acceso || echo spento )" \
+			"{\"temperature\":$(json_dec "$TEMP"),\"humidity\":$(json_dec "$HUM"),\"dewpoint\":$(json_dec "$DEWPOINT"),\"temperature_ext\":$(json_dec "$TEMP_EXT"),\"reason\":\"$REASON\"}"
+	fi
+	echo "$REASON" > "$REASON_FILE"
+fi
+
+# Acceso dall'ora di modifica del file di stato (riscritto solo ai cambi)
+ON_SINCE=""
+[ "$HEATER" = 1 ] && ON_SINCE="$(date -r "$STATE_FILE" +%s 2>/dev/null)"
+
+# Percentuale dei giri da cron con il riscaldamento acceso nell'ultima ora
+if [ "$MODE" != --now ]; then
+	{ cat "$DUTY_FILE" 2>/dev/null; echo "$NOW $HEATER"; } | \
+		awk -v now="$NOW" '$1 > now - 3600 + 60 && $1 <= now + 60' | \
+		tail -n "$DUTY_CYCLES" > "$DUTY_FILE.tmp" && mv "$DUTY_FILE.tmp" "$DUTY_FILE"
+fi
+DUTY="$(awk '{ n++; on += ($2 == 1) } END { if (n) printf "%d", on * 100 / n + 0.5 }' "$DUTY_FILE" 2>/dev/null)"
+
+# Ventola: segue il riscaldamento se heat_fan = 1 (stato voluto)
+FAN=0
+[ "$WC_HEAT_FAN" = 1 ] && [ "$HEATER" = 1 ] && FAN=1
+
+# Firmware della scheda cambiato (salvato in flash solo al cambio)
+FW_FILE=/etc/webcam/board_fw
+if [ -n "$BOARD_FW" ]; then
+	OLD_FW="$(cat "$FW_FILE" 2>/dev/null)"
+	if [ "$OLD_FW" != "$BOARD_FW" ]; then
+		mkdir -p /etc/webcam
+		echo "$BOARD_FW" > "$FW_FILE"
+		if [ -n "$OLD_FW" ]; then
+			log "Firmware della scheda cambiato: $OLD_FW -> $BOARD_FW"
+			wc_event board.version_change info "Firmware della scheda $OLD_FW -> $BOARD_FW" \
+				"{\"component\":\"board\",\"from\":$(json_str "$OLD_FW"),\"to\":$(json_str "$BOARD_FW")}"
+		fi
+	fi
 fi
 
 num() { [ -n "$1" ] && echo "$1" || echo null; }
@@ -126,14 +268,22 @@ cat > "$STATUS_JSON.tmp" <<JSON
   "temperature": $(num "$TEMP"),
   "humidity": $(num "$HUM"),
   "dewpoint": $(num "$DEWPOINT"),
+  "abs_humidity": $(num "$ABS_HUM"),
   "ext_sensor": $( [ "$WC_EXT_SENSOR" = 1 ] && echo true || echo false ),
   "ext_sensor_ok": $( [ "$EXT_OK" = 1 ] && echo true || echo false ),
   "temperature_ext": $(num "$TEMP_EXT"),
   "humidity_ext": $(num "$HUM_EXT"),
   "dewpoint_ext": $(num "$DEWPOINT_EXT"),
+  "abs_humidity_ext": $(num "$ABS_HUM_EXT"),
   "heating_enabled": $( [ "$WC_HEATING" = 1 ] && echo true || echo false ),
   "heater": $( [ "$HEATER" = 1 ] && echo true || echo false ),
-  "board_fw": $( [ -n "$BOARD_FW" ] && echo "\"$BOARD_FW\"" || echo null )
+  "fan": $( [ "$FAN" = 1 ] && echo true || echo false ),
+  "board_fw": $( [ -n "$BOARD_FW" ] && echo "\"$BOARD_FW\"" || echo null ),
+  "heater_on_since": $(json_int "$ON_SINCE"),
+  "heater_duty_pct": $(json_int "$DUTY"),
+  "heat_reason": $(json_str "$REASON"),
+  "heater_boost_until": $(json_int "$BOOST_UNTIL"),
+  "dewpoint_margin": $(json_dec "$WC_HEAT_DEWPOINT_MARGIN")
 }
 JSON
 mv "$STATUS_JSON.tmp" "$STATUS_JSON"

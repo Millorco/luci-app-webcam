@@ -1,0 +1,37 @@
+#!/bin/sh
+# ---------------------------------------------------
+# Prova della connessione al portal (GET /api/v1/whoami), per il
+# pulsante "Test connection" di LuCI e da SSH.
+#
+# Uso: portal_check
+# Stampa una riga con l'esito; esce con 0 se il token è valido e il MAC
+# del router è quello della webcam del token.
+# ---------------------------------------------------
+
+. /usr/bin/webcam.cfg
+. /usr/libexec/webcam/common.sh
+
+[ -n "$WC_PORTAL_URL" ] || { echo "Portal URL non impostato."; exit 1; }
+[ -n "$WC_PORTAL_TOKEN" ] || { echo "Token del portal non impostato."; exit 1; }
+
+TMP="$(mktemp /tmp/webcam_whoami.XXXXXX)" || exit 1
+trap 'rm -f "$TMP" "$TMP.hdr" "$TMP.err"' EXIT INT TERM
+
+code="$(wc_portal_call /api/v1/whoami "$TMP" -m 20)"
+if [ "$code" = 200 ]; then
+	mac="$(get_mac)"
+	if command -v jsonfilter >/dev/null 2>&1; then
+		wmac="$(jsonfilter -i "$TMP" -e '@.webcam.mac' 2>/dev/null)"
+		name="$(jsonfilter -i "$TMP" -e '@.webcam.name' 2>/dev/null)"
+		slug="$(jsonfilter -i "$TMP" -e '@.webcam.slug' 2>/dev/null)"
+	fi
+	if [ -n "$wmac" ] && [ "$wmac" != "$mac" ]; then
+		echo "Token valido ma per un'altra webcam ($wmac, questo router è $mac): il portal rifiuterà i dati (409)."
+		exit 1
+	fi
+	echo "OK: collegato al portal come ${name:-?} (${slug:-?}), MAC $mac."
+	exit 0
+fi
+
+echo "Errore: $(wc_portal_reason "$code" "$TMP")"
+exit 1

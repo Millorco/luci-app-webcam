@@ -4,8 +4,9 @@
 include $(TOPDIR)/rules.mk
 
 LUCI_TITLE:=LuCI Webcam app for gPhoto
-LUCI_DEPENDS:=+luci-base +gphoto2 +libgphoto2-drivers-ptp2 +curl +coreutils-stty
+LUCI_DEPENDS:=+luci-base +gphoto2 +libgphoto2-drivers-ptp2 +curl +ca-bundle +coreutils-stty
 LUCI_PKGARCH:=all
+PKG_VERSION:=1.2.0
 
 PKG_LICENSE:=GPL-2.0
 PKG_MAINTAINER:=Camillo Fagnano <camillo.fagnano@gmail.com>
